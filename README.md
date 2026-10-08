@@ -24,7 +24,7 @@ This project proves that an SDN controller can dynamically route traffic based o
 
 1. **Linux Environment** (e.g., Ubuntu 20.04/22.04 VM or WSL2)
 2. **Mininet:** `sudo apt-get install mininet`
-3. **Ryu Controller:** `pip install ryu` (or `os-ken` if using Python 3.10+)
+3. **Ryu Controller:** `pip install os-ken
 
 Install Python requirements:
 ```bash
@@ -40,7 +40,7 @@ This demonstrates the Northbound REST API integration.
 
 1. **Start the Dynamic Controller:**
    ```bash
-   ryu-manager src/controller/dynamic_router.py
+   osken-manager src/controller/dynamic_router.py
    ```
 2. **Start the Mininet Topology:**
    ```bash
@@ -85,9 +85,9 @@ This demonstrates OpenFlow PortStatus event handling.
 To compare the static baseline against the dynamic SDN approach, run the evaluation scripts. This will output a `performance_metrics.csv` log.
 
 **Evaluate Static Baseline:**
-1. `ryu-manager src/controller/static_router.py`
+1. `osken-manager src/controller/static_router.py`
 2. `sudo python3 tests/evaluate_performance.py static`
 
 **Evaluate Dynamic Controller:**
-1. `ryu-manager src/controller/dynamic_router.py`
+1. `osken-manager src/controller/dynamic_router.py`
 2. `sudo python3 tests/evaluate_performance.py dynamic`
