@@ -20,8 +20,9 @@ class DynamicAppTopo(Topo):
         s3 = self.addSwitch('s3', protocols='OpenFlow13')
 
         # Link switches
-        self.addLink(s1, s2)
-        self.addLink(s1, s3)
+        self.addLink(s1, s2) # s1: port 1, s2: port 1
+        self.addLink(s1, s3) # s1: port 2, s3: port 1
+        self.addLink(s2, s3) # Backup link! s2: port 4, s3: port 5
 
         # Add servers
         for i in range(1, num_servers + 1):
