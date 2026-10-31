@@ -21,3 +21,8 @@ description: Apply these guidelines whenever working on the backend, API routes,
 ### 3. Authentication & Security
 * **Session Verification:** Every protected route MUST independently verify the user's session/token before executing logic.
 * **Ownership Checks:** When modifying or deleting a resource, verify that the `userId` of the resource matches the authenticated user. Never trust the client-provided ID blindly.
+
+### 4. Networking & SDN Emulation (Mininet & OpenFlow)
+* **Explicit Switch Port Binding:** Always assign explicit port numbers (`port1` and `port2`) in `addLink(...)` calls for Mininet topologies. Never rely on implicit sequential port numbering when controllers enforce static or priority-based OpenFlow port routing.
+* **Broadcast Storm & Loop Guards:** On topologies containing redundant links or cycles, enforce `net.staticArp()` on startup to prevent broadcast storms. Ensure controllers explicitly isolate backup links from standard flood domains until failover is triggered.
+* **SDN Controller Frameworks:** When developing with `os-ken`, inherit from `app_manager.OSKenApp` (not `RyuApp`). For Northbound REST APIs, prefer Python standard library HTTP servers (`http.server.ThreadingHTTPServer`) over legacy framework WSGI layers.
