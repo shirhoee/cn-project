@@ -7,7 +7,7 @@ from os_ken.lib.packet import packet
 from os_ken.lib.packet import ethernet
 from os_ken.lib.packet import ether_types
 
-class StaticRouter13(app_manager.RyuApp):
+class StaticRouter13(app_manager.OSKenApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
 
     def __init__(self, *args, **kwargs):
@@ -28,42 +28,34 @@ class StaticRouter13(app_manager.RyuApp):
         
         # Hardcoded static flows based on our fixed topology
         dpid = datapath.id
-        self.logger.info(f"Switch {dpid} connected. Installing static rules.")
         
-        # Topology structure:
-        # s1 (dpid=1): port 1 -> s2, port 2 -> s3
-        # s2 (dpid=2): port 1 -> s1, port 2 -> server1, port 3 -> server2
-        # s3 (dpid=3): port 1 -> s1, port 2 -> client1, port 3 -> client2, port 4 -> client3
-        
-        # MACs: server1 (00:00:00:00:00:0b), server2 (00:00:00:00:00:0c)
-        # clients: client1 (00:00:00:00:00:15), client2 (00:00:00:00:00:16), client3 (00:00:00:00:00:17)
-        
+        # s1: Core Switch (port 1 -> s2, port 2 -> s3)
         if dpid == 1:
-            # Route to servers
-            self.add_static_mac_rule(datapath, "00:00:00:00:00:0b", 1)
-            self.add_static_mac_rule(datapath, "00:00:00:00:00:0c", 1)
-            # Route to clients
-            self.add_static_mac_rule(datapath, "00:00:00:00:00:15", 2)
-            self.add_static_mac_rule(datapath, "00:00:00:00:00:16", 2)
-            self.add_static_mac_rule(datapath, "00:00:00:00:00:17", 2)
-            
+            self.add_static_mac_rule(datapath, "00:00:00:00:00:0b", 1) # server1
+            self.add_static_mac_rule(datapath, "00:00:00:00:00:0c", 1) # server2
+            self.add_static_mac_rule(datapath, "00:00:00:00:00:15", 2) # client1
+            self.add_static_mac_rule(datapath, "00:00:00:00:00:16", 2) # client2
+            self.add_static_mac_rule(datapath, "00:00:00:00:00:17", 2) # client3
+
+        # s2: Server Switch (port 1 -> s1, port 2 -> server1, port 3 -> server2, port 4 -> backup s3)
         elif dpid == 2:
-            # Route to servers
-            self.add_static_mac_rule(datapath, "00:00:00:00:00:0b", 2)
-            self.add_static_mac_rule(datapath, "00:00:00:00:00:0c", 3)
-            # Route to clients (via s1)
-            self.add_static_mac_rule(datapath, "00:00:00:00:00:15", 1)
-            self.add_static_mac_rule(datapath, "00:00:00:00:00:16", 1)
-            self.add_static_mac_rule(datapath, "00:00:00:00:00:17", 1)
-            
+            self.add_static_mac_rule(datapath, "00:00:00:00:00:0b", 2) # server1
+            self.add_static_mac_rule(datapath, "00:00:00:00:00:0c", 3) # server2
+            self.add_static_mac_rule(datapath, "00:00:00:00:00:15", 1) # client1 via s1
+            self.add_static_mac_rule(datapath, "00:00:00:00:00:16", 1) # client2 via s1
+            self.add_static_mac_rule(datapath, "00:00:00:00:00:17", 1) # client3 via s1
+            # Static router does not use the backup link (port 4), so drop unrouted traffic on it
+            self.add_flow(datapath, 5, parser.OFPMatch(in_port=4), [])
+
+        # s3: Client Switch (port 1 -> s1, port 2 -> client1, port 3 -> client2, port 4 -> client3, port 5 -> backup s2)
         elif dpid == 3:
-            # Route to clients
-            self.add_static_mac_rule(datapath, "00:00:00:00:00:15", 2)
-            self.add_static_mac_rule(datapath, "00:00:00:00:00:16", 3)
-            self.add_static_mac_rule(datapath, "00:00:00:00:00:17", 4)
-            # Route to servers (via s1)
-            self.add_static_mac_rule(datapath, "00:00:00:00:00:0b", 1)
-            self.add_static_mac_rule(datapath, "00:00:00:00:00:0c", 1)
+            self.add_static_mac_rule(datapath, "00:00:00:00:00:15", 2) # client1
+            self.add_static_mac_rule(datapath, "00:00:00:00:00:16", 3) # client2
+            self.add_static_mac_rule(datapath, "00:00:00:00:00:17", 4) # client3
+            self.add_static_mac_rule(datapath, "00:00:00:00:00:0b", 1) # server1 via s1
+            self.add_static_mac_rule(datapath, "00:00:00:00:00:0c", 1) # server2 via s1
+            # Drop unrouted traffic on backup link port 5
+            self.add_flow(datapath, 5, parser.OFPMatch(in_port=5), [])
 
     def add_static_mac_rule(self, datapath, dst_mac, out_port):
         parser = datapath.ofproto_parser
@@ -75,8 +67,7 @@ class StaticRouter13(app_manager.RyuApp):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
 
-        inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
-                                             actions)]
+        inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
         if buffer_id:
             mod = parser.OFPFlowMod(datapath=datapath, buffer_id=buffer_id,
                                     priority=priority, match=match,
@@ -100,32 +91,31 @@ class StaticRouter13(app_manager.RyuApp):
 
         if eth.ethertype == ether_types.ETH_TYPE_LLDP:
             return
-            
+
         dst = eth.dst
         src = eth.src
         dpid = datapath.id
 
         self.mac_to_port.setdefault(dpid, {})
-
-        # Learn the MAC address to avoid FLOOD next time
         self.mac_to_port[dpid][src] = in_port
 
         if dst in self.mac_to_port[dpid]:
             out_port = self.mac_to_port[dpid][dst]
-        else:
-            out_port = ofproto.OFPP_FLOOD
-
-        actions = [parser.OFPActionOutput(out_port)]
-
-        # Install a flow to avoid packet_in next time (for learned MACs)
-        if out_port != ofproto.OFPP_FLOOD:
+            actions = [parser.OFPActionOutput(out_port)]
             match = parser.OFPMatch(in_port=in_port, eth_dst=dst, eth_src=src)
-            # Verify if we have a valid buffer_id, if yes avoid to send both flow_mod & packet_out
             if msg.buffer_id != ofproto.OFP_NO_BUFFER:
                 self.add_flow(datapath, 1, match, actions, msg.buffer_id)
                 return
             else:
                 self.add_flow(datapath, 1, match, actions)
+        else:
+            # Safe flooding avoiding backup links
+            if dpid == 2:
+                actions = [parser.OFPActionOutput(p) for p in [1, 2, 3] if p != in_port]
+            elif dpid == 3:
+                actions = [parser.OFPActionOutput(p) for p in [1, 2, 3, 4] if p != in_port]
+            else:
+                actions = [parser.OFPActionOutput(ofproto.OFPP_FLOOD)]
 
         data = None
         if msg.buffer_id == ofproto.OFP_NO_BUFFER:

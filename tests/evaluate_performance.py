@@ -20,6 +20,7 @@ def run_evaluation(controller_script="static_router.py"):
     net = Mininet(topo=topo, controller=c0, switch=OVSSwitch)
     net.addNAT().configDefault()
     net.start()
+    net.staticArp()
     
     time.sleep(2) # Wait for switches to connect to Ryu
     
