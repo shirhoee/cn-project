@@ -10,9 +10,11 @@ from src.network.topology import DynamicAppTopo
 from mininet.net import Mininet
 from mininet.node import RemoteController, OVSSwitch
 from mininet.log import setLogLevel, info
+from mininet.clean import cleanup
 
 def run_evaluation(controller_script="static_router.py"):
     info(f"\n*** Running Evaluation against {controller_script} ***\n")
+    cleanup()
     
     # 1. Initialize Network
     topo = DynamicAppTopo(num_servers=2, num_clients=3)

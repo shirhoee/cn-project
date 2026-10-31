@@ -99,11 +99,22 @@ Leave this running. You will see:
 loading app src/controller/dynamic_router.py
 loading app os_ken.controller.ofp_handler
 instantiating app src/controller/dynamic_router.py of DynamicRouter13
-DynamicRouter REST API listening on http://0.0.0.0:8080/api/overload
+DynamicRouter Web Dashboard & REST API live at: http://0.0.0.0:8080/
 instantiating app os_ken.controller.ofp_handler of OFPHandler
 ```
 
-### Step B: Start the Mininet Network (Terminal 2)
+### Step B: Open the Live Web Telemetry Dashboard (Browser)
+Open your browser (Chrome, Edge, or Firefox on Windows or Linux) and navigate to:
+👉 **[http://localhost:8080/](http://localhost:8080/)**
+
+The dashboard provides a real-time, zero-dependency visual interface for your viva demonstration:
+* **Interactive 60 FPS Topology Visualizer:** Displays switches, servers, clients, and animated packet particle flows.
+* **Live Link State Transitions:** Watch primary links sever and pulse red while the redundant corridor illuminates in glowing electric blue during failover.
+* **Dynamic Hardware NAT Visualizer:** Watch client requests to `10.0.0.11` turn amber and divert to `10.0.0.12` when Server 1 reports overload.
+* **Hardware Flow Table Inspector:** Real-time tabbed view of active OpenFlow 1.3 rules across `s1`, `s2`, and `s3` with priority-based color coding.
+* **Live Event Stream Console:** Timestamped feed of controller events, failovers, and REST alerts.
+
+### Step C: Start the Mininet Network (Terminal 2)
 In a second terminal window:
 ```bash
 cd /mnt/e/cn\ project
@@ -197,21 +208,30 @@ To compare the static baseline against the dynamic SDN approach and record laten
 
 ```text
 cn_project/
-├── PRD.md                         # Product Requirements Document
+├── PRD.md                         # Product Requirements Document & Rubric Mapping
 ├── PROJECT_PLAN.md                # Task delegation & team roles
 ├── README.md                      # Architecture and demonstration runbook
 ├── requirements.txt               # Pinned Python package dependencies
 ├── performance_metrics.csv        # Benchmarking evaluation log
 ├── plans/                         # Implementation feature plans
-│   └── phase-5-docs-cleanup...md
+│   ├── phase-5-docs-cleanup-and-verification.md
+│   └── phase-6-live-telemetry-dashboard.md
 ├── src/
 │   ├── app/
 │   │   ├── client.py              # TCP socket client with latency tracking
 │   │   ├── server.py              # Multi-threaded TCP server with REST alert
 │   │   └── spam_client.py         # Concurrent connection stress tool
 │   ├── controller/
-│   │   ├── dynamic_router.py      # Failover + REST load-balancing controller
-│   │   └── static_router.py       # Baseline static OpenFlow 1.3 controller
+│   │   ├── dynamic_router.py      # Failover + REST + Live Web Dashboard controller
+│   │   ├── static_router.py       # Baseline static OpenFlow 1.3 controller
+│   │   └── telemetry_handler.py   # Telemetry Registry & Dashboard HTTP Handler
+│   ├── dashboard/                 # Zero-dependency browser visualizer
+│   │   ├── index.html             # Main dashboard UI
+│   │   ├── styles.css             # Glassmorphism dark-mode styling
+│   │   └── js/
+│   │       ├── app.js             # Dashboard polling & event controller
+│   │       ├── charts.js          # HTML5 Canvas time-series latency/throughput graph
+│   │       └── topology_canvas.js # 60 FPS HTML5 Canvas animated packet flow engine
 │   ├── network/
 │   │   ├── start_network.sh       # Convenience starter script
 │   │   └── topology.py            # Mininet topology with explicit ports & static ARP
@@ -220,5 +240,6 @@ cn_project/
 └── tests/
     ├── evaluate_performance.py    # Automated comparative test harness
     ├── evaluate_performance.sh    # Evaluation guide wrapper
+    ├── test_dashboard_api.py      # Integration test for dashboard endpoints
     └── test_sanity.py             # Repository & topology sanity assertions
 ```

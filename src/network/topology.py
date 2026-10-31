@@ -5,6 +5,7 @@ from mininet.node import RemoteController, OVSSwitch
 from mininet.cli import CLI
 from mininet.log import setLogLevel, info
 from mininet.topo import Topo
+from mininet.clean import cleanup
 
 class DynamicAppTopo(Topo):
     """
@@ -43,6 +44,9 @@ class DynamicAppTopo(Topo):
         self.addLink(s2, s3, port1=4, port2=5)
 
 def run():
+    # Automatically clean up any leftover virtual interfaces from previous sessions
+    cleanup()
+
     topo = DynamicAppTopo(num_servers=2, num_clients=3)
     
     # Use RemoteController (os-ken / Ryu) on standard OpenFlow port 6653

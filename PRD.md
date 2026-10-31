@@ -166,11 +166,11 @@ cn_project/
 
 ---
 
-### Phase 6: Scope for Advanced Extensions (Future Roadmap)
+* **Phase 6: Live Web Telemetry Dashboard & Flow Visualizer (Deliverable D2 - Completed)**
+  * Embedded zero-dependency `DashboardHttpHandler` directly into `dynamic_router.py` on port 8080.
+  * Implemented 60 FPS HTML5 Canvas 2D topology visualizer with animated packet particles travelling along active paths.
+  * Added live link state transitions (solid cyan -> pulsing red on severed links; glowing electric blue on failover corridor).
+  * Added dynamic NAT particle flow diversion (amber particles redirected to replica `server2` on overload).
+  * Built real-time OpenFlow 1.3 flow table tabs and live event stream terminal with automatic JSON polling.
+  * Authored automated endpoint test suite (`tests/test_dashboard_api.py`).
 
-* **Phase 6.1: Real-Time Web Telemetry Dashboard**
-  * Lightweight web dashboard (Flask / FastAPI or browser-based frontend) polling the controller's REST API.
-  * Live visualizer showing real-time active connections on `server1` vs `server2`, link up/down statuses, and packet flow counts.
-* **Phase 6.2: Dynamic Topology Discovery & Multi-Server Round-Robin**
-  * Implement LLDP-based dynamic switch and link discovery rather than static DPID assumptions.
-  * Extend overload redirection to support an arbitrary pool of $N$ replica servers with weighted round-robin distribution.
