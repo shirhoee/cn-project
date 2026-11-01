@@ -2,6 +2,7 @@ import os
 import json
 import time
 import queue
+import hashlib
 import mimetypes
 import threading
 import http.server
@@ -374,11 +375,12 @@ class DashboardHttpHandler(http.server.BaseHTTPRequestHandler):
                 self.server.router_app.logger.info(f"[REST API] {format % args}")
 
     def end_headers(self):
-        # Enable CORS and disable caching
+        # Enable CORS
         self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
-        self.send_header('Pragma', 'no-cache')
-        self.send_header('Expires', '0')
+        if not getattr(self, '_custom_cache_headers', False):
+            self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+            self.send_header('Pragma', 'no-cache')
+            self.send_header('Expires', '0')
         super().end_headers()
 
     def do_GET(self):
@@ -466,9 +468,31 @@ class DashboardHttpHandler(http.server.BaseHTTPRequestHandler):
             try:
                 with open(file_path, 'rb') as f:
                     content = f.read()
+
+                etag = hashlib.md5(content).hexdigest()
+                inm = self.headers.get('If-None-Match')
+                if inm and inm.strip('"') == etag:
+                    self._custom_cache_headers = True
+                    self.send_response(304)
+                    self.send_header('ETag', f'"{etag}"')
+                    if '?' in self.path and 'v=' in self.path:
+                        self.send_header('Cache-Control', 'public, max-age=31536000, immutable')
+                    else:
+                        self.send_header('Cache-Control', 'public, max-age=3600, must-revalidate')
+                    self.end_headers()
+                    return
+
+                self._custom_cache_headers = True
                 self.send_response(200)
                 self.send_header('Content-Type', mime_type)
                 self.send_header('Content-Length', str(len(content)))
+                self.send_header('ETag', f'"{etag}"')
+                if file_path.endswith('.html'):
+                    self.send_header('Cache-Control', 'no-cache, must-revalidate')
+                elif '?' in self.path and 'v=' in self.path:
+                    self.send_header('Cache-Control', 'public, max-age=31536000, immutable')
+                else:
+                    self.send_header('Cache-Control', 'public, max-age=3600, must-revalidate')
                 self.end_headers()
                 self.wfile.write(content)
                 return
