@@ -11,7 +11,7 @@
   --apple-bg-elevated: #141416;
 
   --apple-glass-thin: rgba(20, 20, 24, 0.65);
-  --apple-glass-regular: rgba(26, 26, 30, 0.72);
+  --apple-glass-regular: rgba(28, 28, 30, 0.72);
   --apple-glass-thick: rgba(34, 34, 38, 0.90);
   --apple-glass-popover: rgba(24, 24, 28, 0.96);
 
@@ -58,12 +58,12 @@
 
   /* Typography / Text Opacity Tiers */
   --apple-text-primary: #f5f5f7;
-  --apple-text-secondary: rgba(235, 235, 245, 0.65);
-  --apple-text-tertiary: rgba(235, 235, 245, 0.40);
-  --apple-text-quaternary: rgba(235, 235, 245, 0.18);
+  --apple-text-secondary: rgba(235, 235, 245, 0.55);
+  --apple-text-tertiary: rgba(235, 235, 245, 0.35);
+  --apple-text-quaternary: rgba(235, 235, 245, 0.16);
 
   /* 4. Native Typography Cascades & Tracking */
-  --apple-font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", 
+  --apple-font-sans: -apple-system, "SF Pro Display", "SF Pro Text", Inter, 
                      "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --apple-font-mono: "SF Mono", ui-monospace, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 
@@ -73,12 +73,12 @@
   --tracking-eyebrow: 0.08em;
 
   /* 5. Radii & Spring Physics */
-  --apple-radius-card: 18px;
-  --apple-radius-button: 9px;
+  --apple-radius-card: 20px;
+  --apple-radius-button: 9999px;
   --apple-radius-pill: 9999px;
   --apple-radius-squircle: 12px;
 
-  --apple-spring: cubic-bezier(0.16, 1, 0.3, 1);
+  --apple-spring: cubic-bezier(0.32, 0.72, 0, 1);
   --apple-spring-bouncy: cubic-bezier(0.34, 1.56, 0.64, 1);
   --apple-ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -298,54 +298,82 @@ body::before {
   100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(100, 210, 255, 0); }
 }
 
-/* macOS Dropdown Select */
+/* macOS / iOS Styled Dropdown Select */
 .poll-control {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  font-size: 0.76rem;
+  gap: 0.45rem;
+  font-size: 0.75rem;
+  color: var(--apple-text-secondary);
+}
+
+.poll-control label {
+  font-weight: 500;
   color: var(--apple-text-secondary);
 }
 
 .poll-control select {
-  background: var(--apple-gray-5);
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: rgba(44, 44, 46, 0.65);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='none' stroke='rgba(235,235,245,0.6)' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M1 1l4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 10px 6px;
   color: var(--apple-text-primary);
   border: 1px solid var(--apple-border-subtle);
-  border-radius: var(--apple-radius-button);
-  padding: 0.3rem 0.65rem;
+  border-radius: var(--apple-radius-pill);
+  padding: 0.35rem 1.95rem 0.35rem 0.85rem;
+  min-height: 32px;
   font-size: 0.74rem;
   font-family: inherit;
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
   outline: none;
   cursor: pointer;
   box-shadow: var(--apple-shadow-pill);
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
 }
 
-.poll-control select:hover, .poll-control select:focus {
+.poll-control select:hover {
+  border-color: var(--apple-border-specular);
+  background-color: rgba(58, 58, 60, 0.85);
+}
+
+.poll-control select:focus {
   border-color: var(--apple-blue);
-  background: var(--apple-gray-4);
+  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.25);
 }
 
 /* ==========================================================================
-   Debug Bar (?debug=1)
+   Debug Bar (?debug=1 or toggle with Shortcut 'D')
    ========================================================================== */
 
 .debug-bar {
-  background: rgba(18, 18, 20, 0.95);
-  border-bottom: 0.5px solid rgba(10, 132, 255, 0.3);
-  color: var(--apple-gray-1);
+  background: rgba(14, 14, 16, 0.88);
+  border-bottom: 0.5px solid var(--apple-border-subtle);
+  color: var(--apple-text-tertiary);
   font-family: var(--apple-font-mono);
   font-size: 0.72rem;
-  padding: 0.4rem 1.6rem;
+  padding: 0.35rem 1.6rem;
   display: flex;
   align-items: center;
   gap: 1.6rem;
   position: relative;
   z-index: 90;
+  opacity: 0.75;
+  transition: opacity 0.2s ease;
+}
+
+.debug-bar:hover {
+  opacity: 1;
 }
 
 .debug-bar.hidden {
+  display: none !important;
+}
+
+body.presenter-mode #debugBar {
   display: none !important;
 }
 
@@ -497,27 +525,35 @@ body::before {
 }
 
 /* ==========================================================================
-   Apple Button Styles & Segmented Controls
+   Apple Button Styles, Segmented Controls & iOS Switches
    ========================================================================== */
 
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
+  gap: 0.45rem;
   font-family: inherit;
   font-size: 0.75rem;
   font-weight: 500;
   letter-spacing: var(--tracking-body);
-  border-radius: var(--apple-radius-button);
-  padding: 0.38rem 0.8rem;
+  border-radius: var(--apple-radius-pill);
+  min-height: 36px;
+  padding: 0.35rem 0.95rem;
   border: 1px solid var(--apple-border-subtle);
   background: var(--apple-gray-5);
   color: var(--apple-text-primary);
   cursor: pointer;
   box-shadow: var(--apple-shadow-pill);
-  transition: all 0.2s var(--apple-spring);
+  transition: transform 0.2s var(--apple-spring), background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
   user-select: none;
+}
+
+@media (max-width: 768px) {
+  .btn {
+    min-height: 44px;
+    padding: 0.45rem 1rem;
+  }
 }
 
 .btn:hover {
@@ -532,22 +568,61 @@ body::before {
 
 .btn-xs {
   font-size: 0.7rem;
-  padding: 0.28rem 0.6rem;
-  border-radius: 7px;
+  min-height: 28px;
+  padding: 0.22rem 0.65rem;
 }
 
 .btn-sm {
   font-size: 0.74rem;
-  padding: 0.35rem 0.75rem;
+  min-height: 36px;
+  padding: 0.32rem 0.85rem;
 }
 
+/* Primary Button Variant (System Blue #0A84FF) */
+.btn-primary {
+  background: var(--apple-blue);
+  color: #ffffff;
+  border-color: transparent;
+  box-shadow: 0 2px 8px rgba(10, 132, 255, 0.35);
+}
+
+.btn-primary:hover {
+  background: #0077ed;
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(10, 132, 255, 0.45);
+}
+
+/* Secondary / Outline Button Variant (Translucent Glass) */
+.btn-secondary,
 .btn-outline {
   background: rgba(44, 44, 46, 0.6);
   border-color: var(--apple-border-subtle);
+  color: var(--apple-text-primary);
 }
 
+.btn-secondary:hover,
 .btn-outline:hover {
   background: rgba(58, 58, 60, 0.85);
+  border-color: var(--apple-border-specular);
+  color: #ffffff;
+}
+
+/* Destructive / Warning Button Variant (System Red #FF453A / Orange) */
+.btn-destructive,
+.btn-danger,
+.btn-warning {
+  background: rgba(255, 69, 58, 0.16);
+  border-color: rgba(255, 69, 58, 0.32);
+  color: var(--apple-red);
+}
+
+.btn-destructive:hover,
+.btn-danger:hover,
+.btn-warning:hover {
+  background: rgba(255, 69, 58, 0.28);
+  border-color: rgba(255, 69, 58, 0.5);
+  color: #ffffff;
+  box-shadow: 0 2px 10px rgba(255, 69, 58, 0.25);
 }
 
 .btn-ghost {
@@ -563,47 +638,122 @@ body::before {
 }
 
 .btn.active {
-  background: rgba(10, 132, 255, 0.2);
-  border-color: rgba(10, 132, 255, 0.45);
+  background: rgba(10, 132, 255, 0.18);
+  border-color: rgba(10, 132, 255, 0.4);
   color: var(--apple-cyan);
-  box-shadow: 0 0 12px rgba(10, 132, 255, 0.3);
 }
 
-.btn-warning {
-  border-color: rgba(255, 159, 10, 0.4);
-  color: var(--apple-orange);
-  background: rgba(255, 159, 10, 0.12);
+/* Real iOS Toggle Switch Component */
+.ios-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  background: rgba(44, 44, 46, 0.6);
+  border: 1px solid var(--apple-border-subtle);
+  border-radius: var(--apple-radius-pill);
+  padding: 0.2rem 0.35rem 0.2rem 0.85rem;
+  min-height: 36px;
+  cursor: pointer;
+  color: var(--apple-text-primary);
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 500;
+  box-shadow: var(--apple-shadow-pill);
+  transition: transform 0.2s var(--apple-spring), background-color 0.18s ease, border-color 0.18s ease;
+  user-select: none;
 }
 
-.btn-warning:hover {
-  background: rgba(255, 159, 10, 0.25);
-  color: #ffffff;
-  box-shadow: 0 0 14px rgba(255, 159, 10, 0.35);
+@media (max-width: 768px) {
+  .ios-switch {
+    min-height: 44px;
+    padding: 0.3rem 0.45rem 0.3rem 1rem;
+  }
 }
 
-/* macOS Control Center Segmented Control */
+.ios-switch:hover {
+  background: rgba(58, 58, 60, 0.85);
+  border-color: var(--apple-border-specular);
+}
+
+.ios-switch:active {
+  transform: scale(0.96);
+}
+
+.switch-track {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  background: rgba(120, 120, 128, 0.32);
+  border-radius: 9999px;
+  transition: background-color 0.25s var(--apple-spring);
+  display: inline-block;
+  flex-shrink: 0;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  background: #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.35), 0 0 1px rgba(0, 0, 0, 0.2);
+  transition: transform 0.25s var(--apple-spring);
+}
+
+.ios-switch.active .switch-track {
+  background: var(--apple-green);
+}
+
+.ios-switch.active .switch-thumb {
+  transform: translateX(18px);
+}
+
+/* iOS Segmented Control with Single Sliding Pill */
 .segmented-control,
 .switch-tabs {
+  position: relative;
   display: inline-flex;
+  align-items: center;
   padding: 3px;
   background: rgba(118, 118, 128, 0.24);
   border-radius: var(--apple-radius-pill);
-  gap: 2px;
+  gap: 0;
+  user-select: none;
+  min-height: 32px;
+}
+
+.segmented-pill {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  border-radius: var(--apple-radius-pill);
+  background: var(--apple-gray-5);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  transition: transform 0.28s var(--apple-spring), width 0.28s var(--apple-spring);
+  pointer-events: none;
+  z-index: 1;
 }
 
 .segmented-control .tab-btn,
 .switch-tabs .tab-btn {
-  background: transparent;
+  position: relative;
+  z-index: 2;
+  background: transparent !important;
   color: var(--apple-text-secondary);
   border: none;
-  padding: 0.32rem 0.85rem;
+  padding: 0.35rem 0.85rem;
   border-radius: var(--apple-radius-pill);
   font-size: 0.74rem;
   font-weight: 500;
   letter-spacing: var(--tracking-body);
   cursor: pointer;
-  box-shadow: none;
-  transition: all 0.2s var(--apple-spring);
+  box-shadow: none !important;
+  transition: color 0.18s ease;
+  outline: none;
 }
 
 .segmented-control .tab-btn:hover,
@@ -613,9 +763,7 @@ body::before {
 
 .segmented-control .tab-btn.active,
 .switch-tabs .tab-btn.active {
-  background: var(--apple-gray-5);
   color: var(--apple-text-primary);
-  box-shadow: var(--apple-shadow-pill);
   font-weight: 600;
 }
 
@@ -772,8 +920,8 @@ body::before {
 .metric-box {
   background: rgba(36, 36, 38, 0.45);
   border: 1px solid var(--apple-border-subtle);
-  border-radius: 12px;
-  padding: 0.6rem 0.75rem;
+  border-radius: 14px;
+  padding: 0.7rem 0.85rem;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -793,32 +941,33 @@ body::before {
   text-transform: uppercase;
   letter-spacing: var(--tracking-eyebrow);
   color: var(--apple-text-tertiary);
-  margin-bottom: 0.2rem;
+  margin-bottom: 0.25rem;
 }
 
 .metric-value {
   display: flex;
   align-items: baseline;
-  gap: 0.25rem;
-  margin-bottom: 0.2rem;
+  gap: 0.3rem;
+  margin-bottom: 0.25rem;
 }
 
 .metric-value strong {
-  font-size: 1.55rem;
-  font-weight: 700;
-  letter-spacing: var(--tracking-hero);
+  font-size: 2.1rem;
+  font-weight: 300;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums slashed-zero;
   color: var(--apple-text-primary);
-  line-height: 1.1;
+  line-height: 1.05;
 }
 
 .metric-value small {
-  font-size: 0.72rem;
-  font-weight: 500;
+  font-size: 0.74rem;
+  font-weight: 400;
   color: var(--apple-text-secondary);
 }
 
 .metric-sub {
-  font-size: 0.68rem;
+  font-size: 0.7rem;
   color: var(--apple-text-secondary);
   white-space: nowrap;
   overflow: hidden;
@@ -1402,4 +1551,23 @@ body.presenter-mode .metric-value strong {
 
 body.presenter-mode .comparison-card {
   display: none !important;
+}
+
+body.presenter-mode #debugBar {
+  display: none !important;
+}
+
+/* ==========================================================================
+   Accessibility & Reduced Motion
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

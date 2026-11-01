@@ -89,10 +89,13 @@
           <span class="badge badge-info">OpenFlow 1.3 Data Plane</span>
         </div>
         <div class="header-actions">
-          <button id="btnTogglePackets" class="btn btn-sm btn-outline active">Packet Stream: ON</button>
-          <button id="btnTriggerFailoverSim" class="btn btn-sm btn-outline" title="Simulate link failure via controller demo endpoint"><span class="badge-demo">DEMO</span> Failover</button>
-          <button id="btnTriggerOverloadSim" class="btn btn-sm btn-outline" title="Simulate server overload via controller demo endpoint"><span class="badge-demo">DEMO</span> Overload</button>
-          <button id="btnResetSystem" class="btn btn-sm btn-outline btn-warning" title="Reset dynamic flows, link states, and restore healthy baseline">Reset Baseline</button>
+          <button id="btnTogglePackets" class="ios-switch active" role="switch" aria-checked="true" title="Toggle Animated Packet Stream (Shortcut: S)">
+            <span class="switch-label">Packet Stream</span>
+            <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+          </button>
+          <button id="btnTriggerFailoverSim" class="btn btn-sm btn-secondary" title="Simulate link failure via controller demo endpoint"><span class="badge-demo">DEMO</span> Failover</button>
+          <button id="btnTriggerOverloadSim" class="btn btn-sm btn-secondary" title="Simulate server overload via controller demo endpoint"><span class="badge-demo">DEMO</span> Overload</button>
+          <button id="btnResetSystem" class="btn btn-sm btn-destructive" title="Reset dynamic flows, link states, and restore healthy baseline">Reset Baseline</button>
         </div>
       </div>
 
@@ -159,10 +162,11 @@
             <h3>Hardware Flow Table</h3>
             <span id="flowDiffBadge" class="flow-diff-chip hidden">+0 rules</span>
           </div>
-          <div class="segmented-control" id="switchTabs">
-            <button class="tab-btn active" data-dpid="1">Core (s1)</button>
-            <button class="tab-btn" data-dpid="2">Server (s2)</button>
-            <button class="tab-btn" data-dpid="3">Client (s3)</button>
+          <div class="segmented-control" id="switchTabs" role="tablist">
+            <div class="segmented-pill" id="segmentedPill" aria-hidden="true"></div>
+            <button class="tab-btn active" data-dpid="1" role="tab" aria-selected="true">Core (s1)</button>
+            <button class="tab-btn" data-dpid="2" role="tab" aria-selected="false">Server (s2)</button>
+            <button class="tab-btn" data-dpid="3" role="tab" aria-selected="false">Client (s3)</button>
           </div>
         </div>
 
@@ -254,6 +258,7 @@
         <li><kbd>R</kbd> <span>Reset System to Healthy Baseline</span></li>
         <li><kbd>P</kbd> <span>Toggle Presenter Mode (High-Contrast Projector View)</span></li>
         <li><kbd>S</kbd> <span>Toggle Animated Packet Flow Stream</span></li>
+        <li><kbd>D</kbd> <span>Toggle Debug Bar Visibility</span></li>
         <li><kbd>?</kbd> <span>Open this Keyboard Shortcuts Guide</span></li>
       </ul>
     </div>

@@ -340,12 +340,19 @@ class DashboardApp {
     const tabs = document.querySelectorAll('.tab-btn');
     tabs.forEach(btn => {
       btn.addEventListener('click', () => {
-        tabs.forEach(b => b.classList.remove('active'));
+        tabs.forEach(b => {
+          b.classList.remove('active');
+          b.setAttribute('aria-selected', 'false');
+        });
         btn.classList.add('active');
+        btn.setAttribute('aria-selected', 'true');
         this.currentDpid = parseInt(btn.getAttribute('data-dpid'));
         this.renderFlowTable();
+        this.updateSegmentedPill();
       });
     });
+    this.updateSegmentedPill();
+    window.addEventListener('resize', () => this.updateSegmentedPill());
 
     // Poll rate selector
     const pollSelect = document.getElementById('pollRate');
@@ -356,11 +363,20 @@ class DashboardApp {
 
     // Toggle packet particles
     const btnTogglePackets = document.getElementById('btnTogglePackets');
-    btnTogglePackets.addEventListener('click', () => {
-      this.topoCanvas.animationRunning = !this.topoCanvas.animationRunning;
-      btnTogglePackets.classList.toggle('active', this.topoCanvas.animationRunning);
-      btnTogglePackets.textContent = `Packet Stream: ${this.topoCanvas.animationRunning ? 'ON' : 'OFF'}`;
-    });
+    if (btnTogglePackets) {
+      btnTogglePackets.addEventListener('click', () => {
+        this.topoCanvas.animationRunning = !this.topoCanvas.animationRunning;
+        const isRunning = this.topoCanvas.animationRunning;
+        btnTogglePackets.classList.toggle('active', isRunning);
+        btnTogglePackets.setAttribute('aria-checked', isRunning ? 'true' : 'false');
+        const label = btnTogglePackets.querySelector('.switch-label');
+        if (label) {
+          label.textContent = `Packet Stream: ${isRunning ? 'ON' : 'OFF'}`;
+        } else {
+          btnTogglePackets.textContent = `Packet Stream: ${isRunning ? 'ON' : 'OFF'}`;
+        }
+      });
+    }
 
     // Clear log button
     document.getElementById('btnClearLog').addEventListener('click', () => {
@@ -466,6 +482,9 @@ class DashboardApp {
         document.getElementById('btnPresenterMode')?.click();
       } else if (key === 's') {
         document.getElementById('btnTogglePackets')?.click();
+      } else if (key === 'd') {
+        const db = document.getElementById('debugBar');
+        if (db) db.classList.toggle('hidden');
       } else if (key === '?') {
         const m = document.getElementById('shortcutsModal');
         if (m) m.classList.toggle('hidden');
@@ -566,9 +585,30 @@ class DashboardApp {
     this.currentDpid = dpid;
     const tabs = document.querySelectorAll('.tab-btn');
     tabs.forEach(b => {
-      b.classList.toggle('active', parseInt(b.getAttribute('data-dpid')) === dpid);
+      const isSelected = parseInt(b.getAttribute('data-dpid')) === dpid;
+      b.classList.toggle('active', isSelected);
+      b.setAttribute('aria-selected', isSelected ? 'true' : 'false');
     });
     this.renderFlowTable();
+    this.updateSegmentedPill();
+  }
+
+  updateSegmentedPill() {
+    const container = document.getElementById('switchTabs');
+    const pill = document.getElementById('segmentedPill');
+    if (!container || !pill) return;
+    const activeTab = container.querySelector('.tab-btn.active');
+    if (activeTab) {
+      const containerRect = container.getBoundingClientRect();
+      const activeRect = activeTab.getBoundingClientRect();
+      const leftOffset = activeRect.left - containerRect.left;
+      pill.style.width = `${activeRect.width}px`;
+      pill.style.height = `${activeRect.height}px`;
+      pill.style.transform = `translateX(${leftOffset}px)`;
+      pill.style.opacity = '1';
+    } else {
+      pill.style.opacity = '0';
+    }
   }
 
   async fetchTelemetry() {

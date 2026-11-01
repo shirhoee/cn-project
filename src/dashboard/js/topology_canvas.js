@@ -291,6 +291,15 @@ class TopologyCanvas {
   }
 
   step(now, delta) {
+    const reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reducedMotion) {
+      if (this.particles.length > 0) {
+        this.particles = [];
+        this.render();
+      }
+      return;
+    }
+
     this.pulseAngle += 0.05;
     this.dashOffset = (this.dashOffset - 0.45) % 16;
 
