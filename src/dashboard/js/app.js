@@ -63,6 +63,7 @@ class DashboardApp {
     // Start SSE stream as the sole real-time path (fallback REST polling only on disconnect)
     this.fallbackPollTimer = null;
     this.initSSE();
+    this.initIntersectionObservers();
     this.startSharedAnimationLoop();
   }
 
@@ -154,14 +155,20 @@ class DashboardApp {
         this.updateDebugBarMetrics();
       }
 
-      // Step Topology Canvas
+      // Step Topology Canvas only when visible in viewport
       if (this.topoCanvas && this.topoCanvas.step) {
-        this.topoCanvas.step(now, delta);
+        const topoEl = document.getElementById('topoCanvas');
+        if (!topoEl || topoEl._isIntersecting !== false) {
+          this.topoCanvas.step(now, delta);
+        }
       }
 
-      // Step Connection Gauge if animating
+      // Step Connection Gauge if animating and visible
       if (this.connGauge && this.connGauge.step) {
-        this.connGauge.step();
+        const gaugeEl = document.getElementById('connGauge');
+        if (!gaugeEl || gaugeEl._isIntersecting !== false) {
+          this.connGauge.step();
+        }
       }
 
       requestAnimationFrame(tick);
@@ -506,12 +513,53 @@ class DashboardApp {
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
         this.stopSharedAnimationLoop();
-        if (this.topoCanvas && this.topoCanvas.stopLoop) this.topoCanvas.stopLoop();
+        this.stopFallbackPolling();
       } else {
         this.startSharedAnimationLoop();
-        if (this.topoCanvas && this.topoCanvas.startLoop) this.topoCanvas.startLoop();
+        if (!this.sseActive) {
+          this.startFallbackPolling();
+        }
+        if (this.topoCanvas) {
+          this.topoCanvas.renderStatic();
+          this.topoCanvas.render();
+        }
+        if (this.metricsChart) this.metricsChart.render();
+        if (this.connGauge) this.connGauge.render();
+        if (this.comparisonChart) this.comparisonChart.render();
       }
     });
+  }
+
+  initIntersectionObservers() {
+    if (!('IntersectionObserver' in window)) return;
+
+    this.canvasObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        entry.target._isIntersecting = entry.isIntersecting;
+        if (entry.isIntersecting) {
+          // If canvas scrolled into view, trigger one render pass
+          if (entry.target.id === 'topoCanvas' && this.topoCanvas) {
+            this.topoCanvas.renderStatic();
+            this.topoCanvas.render();
+          } else if (entry.target.id === 'metricsChart' && this.metricsChart) {
+            this.metricsChart.render();
+          } else if (entry.target.id === 'connGauge' && this.connGauge) {
+            this.connGauge.render();
+          } else if (entry.target.id === 'comparisonCanvas' && this.comparisonChart) {
+            this.comparisonChart.render();
+          }
+        }
+      }
+    }, { threshold: 0.05 });
+
+    const canvasIds = ['topoCanvas', 'metricsChart', 'connGauge', 'comparisonCanvas'];
+    for (const id of canvasIds) {
+      const el = document.getElementById(id);
+      if (el) {
+        el._isIntersecting = true;
+        this.canvasObserver.observe(el);
+      }
+    }
   }
 
   selectSwitchTab(dpid) {

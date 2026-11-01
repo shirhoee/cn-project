@@ -111,7 +111,7 @@ class ComparisonChart {
   }
 
   render() {
-    if (!this.ctx || !this.data) return;
+    if (!this.ctx || !this.data || this.canvas?._isIntersecting === false || document.hidden) return;
     const ctx = this.ctx;
     const w = this.width;
     const h = this.height;

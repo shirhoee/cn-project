@@ -202,7 +202,7 @@ class MetricsChart {
   }
 
   render() {
-    if (!this.ctx) return;
+    if (!this.ctx || this.canvas?._isIntersecting === false || document.hidden) return;
     const ctx = this.ctx;
     const w = this.width;
     const h = this.height;
