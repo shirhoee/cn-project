@@ -6,6 +6,7 @@ class ConnectionGauge {
   constructor(canvasId = 'connGauge') {
     this.canvas = document.getElementById(canvasId);
     if (!this.canvas) return;
+    this.container = this.canvas.parentElement;
     this.ctx = this.canvas.getContext('2d');
     this.dpr = window.devicePixelRatio || 1;
     this.currentValue = 0;
@@ -13,47 +14,105 @@ class ConnectionGauge {
     this.threshold = 2;
     this.maxVal = 3.5;
 
-    this.resize();
-    this.animate();
+    this._appliedW = 0;
+    this._appliedH = 0;
+    this._appliedDpr = 0;
+    this._resizePending = false;
+
+    // Initial resize from wrapper
+    const rect = this.container.getBoundingClientRect();
+    this.handleResize(rect.width || 90, rect.height || 54, true);
+
+    this.resizeObserver = new ResizeObserver((entries) => {
+      if (window._debugObserverFires !== undefined) window._debugObserverFires++;
+      const entry = entries && entries[0];
+      if (!entry) return;
+      const cssW = entry.contentRect ? entry.contentRect.width : this.container.clientWidth;
+      const cssH = entry.contentRect ? entry.contentRect.height : this.container.clientHeight;
+      this.handleResize(cssW, cssH);
+    });
+    this.resizeObserver.observe(this.container);
+
+    this.render();
+  }
+
+  handleResize(cssW, cssH, immediate = false) {
+    const w = Math.round(cssW);
+    const h = Math.round(cssH);
+    const dpr = window.devicePixelRatio || 1;
+
+    if (w <= 0 || h <= 0) return;
+    if (w === this._appliedW && h === this._appliedH && dpr === this._appliedDpr) return;
+
+    this._nextW = w;
+    this._nextH = h;
+    this._nextDpr = dpr;
+
+    if (immediate) {
+      this._applyResize();
+      return;
+    }
+
+    if (this._resizePending) return;
+    this._resizePending = true;
+
+    requestAnimationFrame(() => {
+      this._resizePending = false;
+      this._applyResize();
+    });
+  }
+
+  _applyResize() {
+    const w = this._nextW;
+    const h = this._nextH;
+    const dpr = this._nextDpr;
+    if (!w || !h) return;
+    if (w === this._appliedW && h === this._appliedH && dpr === this._appliedDpr) return;
+
+    this._appliedW = w;
+    this._appliedH = h;
+    this._appliedDpr = dpr;
+
+    this.dpr = dpr;
+    this.width = w;
+    this.height = h;
+
+    this.canvas.width = Math.round(w * dpr);
+    this.canvas.height = Math.round(h * dpr);
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.render();
   }
 
   resize() {
-    if (!this.canvas) return;
-    const rect = this.canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    const w = Math.round(rect.width);
-    const h = Math.round(rect.height);
-    if (w === this._lastW && h === this._lastH && dpr === this._lastDpr) return;
-    this._lastW = w;
-    this._lastH = h;
-    this._lastDpr = dpr;
+    if (!this.container) return;
+    const rect = this.container.getBoundingClientRect();
+    this.handleResize(rect.width, rect.height, false);
+  }
 
-    this.dpr = dpr;
-    this.width = w || 100;
-    this.height = h || 65;
-    this.canvas.width = Math.round(this.width * this.dpr);
-    this.canvas.height = Math.round(this.height * this.dpr);
-    this.canvas.style.width = `${this.width}px`;
-    this.canvas.style.height = `${this.height}px`;
-    this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+  destroy() {
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
   }
 
   setValue(val) {
-    this.targetValue = Math.max(0, val);
+    const num = Math.max(0, val);
+    if (num !== this.targetValue) {
+      this.targetValue = num;
+      this.step();
+    }
   }
 
-  animate() {
-    const step = () => {
-      const diff = this.targetValue - this.currentValue;
-      if (Math.abs(diff) > 0.01) {
-        this.currentValue += diff * 0.15;
-      } else {
-        this.currentValue = this.targetValue;
-      }
+  step() {
+    const diff = this.targetValue - this.currentValue;
+    if (Math.abs(diff) > 0.01) {
+      this.currentValue += diff * 0.18;
       this.render();
-      requestAnimationFrame(step);
-    };
-    requestAnimationFrame(step);
+    } else if (this.currentValue !== this.targetValue) {
+      this.currentValue = this.targetValue;
+      this.render();
+    }
   }
 
   render() {

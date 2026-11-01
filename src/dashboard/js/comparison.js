@@ -6,6 +6,7 @@ class ComparisonChart {
   constructor(canvasId = 'comparisonCanvas') {
     this.canvas = document.getElementById(canvasId);
     if (!this.canvas) return;
+    this.container = this.canvas.parentElement;
     this.ctx = this.canvas.getContext('2d');
     this.dpr = window.devicePixelRatio || 1;
     this.data = {
@@ -13,32 +14,87 @@ class ComparisonChart {
       dynamic: { median_latency: 0.72, avg_throughput: 10250.0, success_rate: 100.0 }
     };
 
-    this.resize();
+    this._appliedW = 0;
+    this._appliedH = 0;
+    this._appliedDpr = 0;
+    this._resizePending = false;
+
+    // Initial resize from wrapper
+    const rect = this.container.getBoundingClientRect();
+    this.handleResize(rect.width || 440, rect.height || 145, true);
+
+    this.resizeObserver = new ResizeObserver((entries) => {
+      if (window._debugObserverFires !== undefined) window._debugObserverFires++;
+      const entry = entries && entries[0];
+      if (!entry) return;
+      const cssW = entry.contentRect ? entry.contentRect.width : this.container.clientWidth;
+      const cssH = entry.contentRect ? entry.contentRect.height : this.container.clientHeight;
+      this.handleResize(cssW, cssH);
+    });
+    this.resizeObserver.observe(this.container);
+
     this.render();
     this.loadData();
   }
 
-  resize() {
-    if (!this.canvas) return;
-    const rect = this.canvas.getBoundingClientRect();
+  handleResize(cssW, cssH, immediate = false) {
+    const w = Math.round(cssW);
+    const h = Math.round(cssH);
     const dpr = window.devicePixelRatio || 1;
-    const w = Math.round(rect.width);
-    const h = Math.round(rect.height);
 
-    if (w === this._lastW && h === this._lastH && dpr === this._lastDpr) return;
-    this._lastW = w;
-    this._lastH = h;
-    this._lastDpr = dpr;
+    if (w <= 0 || h <= 0) return;
+    if (w === this._appliedW && h === this._appliedH && dpr === this._appliedDpr) return;
+
+    this._nextW = w;
+    this._nextH = h;
+    this._nextDpr = dpr;
+
+    if (immediate) {
+      this._applyResize();
+      return;
+    }
+
+    if (this._resizePending) return;
+    this._resizePending = true;
+
+    requestAnimationFrame(() => {
+      this._resizePending = false;
+      this._applyResize();
+    });
+  }
+
+  _applyResize() {
+    const w = this._nextW;
+    const h = this._nextH;
+    const dpr = this._nextDpr;
+    if (!w || !h) return;
+    if (w === this._appliedW && h === this._appliedH && dpr === this._appliedDpr) return;
+
+    this._appliedW = w;
+    this._appliedH = h;
+    this._appliedDpr = dpr;
 
     this.dpr = dpr;
-    this.width = w || 440;
-    this.height = h || 180;
-    this.canvas.width = Math.round(this.width * this.dpr);
-    this.canvas.height = Math.round(this.height * this.dpr);
-    this.canvas.style.width = `${this.width}px`;
-    this.canvas.style.height = `${this.height}px`;
-    this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    this.width = w;
+    this.height = h;
+
+    this.canvas.width = Math.round(w * dpr);
+    this.canvas.height = Math.round(h * dpr);
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.render();
+  }
+
+  resize() {
+    if (!this.container) return;
+    const rect = this.container.getBoundingClientRect();
+    this.handleResize(rect.width, rect.height, false);
+  }
+
+  destroy() {
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
   }
 
   async loadData() {

@@ -59,10 +59,13 @@
 
   <!-- Debug Bar (Activated via ?debug=1) -->
   <div id="debugBar" class="debug-bar hidden" aria-live="polite">
-    <span class="debug-item"><strong>DEBUG:</strong> Active</span>
-    <span class="debug-item">SSE Pipeline: <span id="debugSseState" class="debug-val state-warn">CONNECTING</span></span>
-    <span class="debug-item">Last Telemetry: <span id="debugLastTimestamp" class="debug-val">--</span></span>
-    <span class="debug-item">Last Error: <span id="debugLastError" class="debug-val state-ok">None</span></span>
+    <span class="debug-item"><strong>DEBUG</strong></span>
+    <span class="debug-item">SSE: <span id="debugSseState" class="debug-val state-warn">CONNECTING</span></span>
+    <span class="debug-item">Frame: <span id="debugFrameTime" class="debug-val">-- ms</span></span>
+    <span class="debug-item">RO Fires/s: <span id="debugRoFires" class="debug-val state-ok">0</span></span>
+    <span class="debug-item">Canvas WxH: <span id="debugCanvasSizes" class="debug-val">--</span></span>
+    <span class="debug-item">Last Data: <span id="debugLastTimestamp" class="debug-val">--</span></span>
+    <span class="debug-item">Error: <span id="debugLastError" class="debug-val state-ok">None</span></span>
   </div>
 
   <!-- Main Dashboard Container -->

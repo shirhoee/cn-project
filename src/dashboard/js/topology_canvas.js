@@ -49,36 +49,81 @@ class TopologyCanvas {
     this.traceSource = null;
     this.traceTarget = null;
 
-    // Auto-resize with DPR scaling
-    this.resize();
-    this.resizeObserver = new ResizeObserver(() => this.resize());
+    // Auto-resize with DPR scaling (observing CSS wrapper)
+    this._appliedW = 0;
+    this._appliedH = 0;
+    this._appliedDpr = 0;
+    this._resizePending = false;
+
+    const rect = this.container.getBoundingClientRect();
+    this.handleResize(rect.width || 920, rect.height || 580, true);
+
+    this.resizeObserver = new ResizeObserver((entries) => {
+      if (window._debugObserverFires !== undefined) window._debugObserverFires++;
+      const entry = entries && entries[0];
+      if (!entry) return;
+      const cssW = entry.contentRect ? entry.contentRect.width : this.container.clientWidth;
+      const cssH = entry.contentRect ? entry.contentRect.height : this.container.clientHeight;
+      this.handleResize(cssW, cssH);
+    });
     this.resizeObserver.observe(this.container);
 
     this.bindEvents();
     this.startLoop();
   }
 
-  resize() {
-    const rect = this.container.getBoundingClientRect();
+  handleResize(cssW, cssH, immediate = false) {
+    const w = Math.round(cssW);
+    const h = Math.round(cssH);
     const dpr = window.devicePixelRatio || 1;
-    const w = Math.round(rect.width);
-    const h = Math.round(rect.height);
 
-    if (w === this._lastW && h === this._lastH && dpr === this._lastDpr) return;
-    this._lastW = w;
-    this._lastH = h;
-    this._lastDpr = dpr;
+    if (w <= 0 || h <= 0) return;
+    if (w === this._appliedW && h === this._appliedH && dpr === this._appliedDpr) return;
+
+    this._nextW = w;
+    this._nextH = h;
+    this._nextDpr = dpr;
+
+    if (immediate) {
+      this._applyResize();
+      return;
+    }
+
+    if (this._resizePending) return;
+    this._resizePending = true;
+
+    requestAnimationFrame(() => {
+      this._resizePending = false;
+      this._applyResize();
+    });
+  }
+
+  _applyResize() {
+    const w = this._nextW;
+    const h = this._nextH;
+    const dpr = this._nextDpr;
+    if (!w || !h) return;
+    if (w === this._appliedW && h === this._appliedH && dpr === this._appliedDpr) return;
+
+    this._appliedW = w;
+    this._appliedH = h;
+    this._appliedDpr = dpr;
 
     this.dpr = dpr;
-    this.width = w || 920;
-    this.height = h || 580;
+    this.width = w;
+    this.height = h;
 
-    this.canvas.width = Math.round(this.width * this.dpr);
-    this.canvas.height = Math.round(this.height * this.dpr);
+    this.canvas.width = Math.round(w * dpr);
+    this.canvas.height = Math.round(h * dpr);
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     this.updateNodePositions();
     this.render();
+  }
+
+  resize() {
+    const rect = this.container.getBoundingClientRect();
+    this.handleResize(rect.width, rect.height, false);
   }
 
   updateNodePositions() {
@@ -190,24 +235,13 @@ class TopologyCanvas {
   startLoop() {
     if (this.loopRunning) return;
     this.loopRunning = true;
-    let lastSpawn = 0;
     const animate = (timestamp) => {
       if (!this.loopRunning) return;
-      this.pulseAngle += 0.05;
-      this.dashOffset = (this.dashOffset - 0.45) % 16;
-
-      // Smooth link transition lerp (0 = UP, 1 = DOWN)
-      const targetLink = (this.state.linkS1S2Down || this.state.failoverActive) ? 1.0 : 0.0;
-      this.linkTransitionS1S2 += (targetLink - this.linkTransitionS1S2) * 0.12;
-
-      // Spawn animated packet particles every 380ms
-      if (this.animationRunning && timestamp - lastSpawn > 380) {
-        this.spawnPacket();
-        lastSpawn = timestamp;
+      if (window.app && window.app._animRunning) {
+        this.loopRunning = false;
+        return;
       }
-
-      this.updateParticles();
-      this.render();
+      this.step(timestamp, 16);
       requestAnimationFrame(animate);
     };
     requestAnimationFrame(animate);
@@ -217,7 +251,34 @@ class TopologyCanvas {
     this.loopRunning = false;
   }
 
+  step(now, delta) {
+    this.pulseAngle += 0.05;
+    this.dashOffset = (this.dashOffset - 0.45) % 16;
+
+    // Smooth link transition lerp (0 = UP, 1 = DOWN)
+    const targetLink = (this.state.linkS1S2Down || this.state.failoverActive) ? 1.0 : 0.0;
+    this.linkTransitionS1S2 += (targetLink - this.linkTransitionS1S2) * 0.12;
+
+    // Spawn animated packet particles every 380ms
+    if (this.animationRunning && (!this._lastSpawn || now - this._lastSpawn > 380)) {
+      this.spawnPacket();
+      this._lastSpawn = now;
+    }
+
+    this.updateParticles();
+    this.render();
+  }
+
+  destroy() {
+    this.stopLoop();
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
+  }
+
   spawnPacket() {
+    if (this.particles.length >= 24) return;
     const clients = ['client1', 'client2', 'client3'];
     const client = clients[Math.floor(Math.random() * clients.length)];
 

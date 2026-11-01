@@ -9,43 +9,92 @@ class MetricsChart {
     this.container = this.canvas.parentElement;
     this.ctx = this.canvas.getContext('2d');
     this.dataPoints = []; // [{latency, throughput, timestamp}]
-    this.maxPoints = 28;
+    this.maxPoints = 60; // Rolling window of last 60 samples
     this.dpr = window.devicePixelRatio || 1;
     this.width = 480;
-    this.height = 120;
+    this.height = 140;
     this.hoverIndex = -1;
 
-    // Resize observer
-    this.resize();
-    this.resizeObserver = new ResizeObserver(() => this.resize());
+    this._appliedW = 0;
+    this._appliedH = 0;
+    this._appliedDpr = 0;
+    this._resizePending = false;
+
+    // Initial sizing from container
+    const rect = this.container.getBoundingClientRect();
+    this.handleResize(rect.width || 480, rect.height || 140, true);
+
+    this.resizeObserver = new ResizeObserver((entries) => {
+      if (window._debugObserverFires !== undefined) window._debugObserverFires++;
+      const entry = entries && entries[0];
+      if (!entry) return;
+      const cssW = entry.contentRect ? entry.contentRect.width : this.container.clientWidth;
+      const cssH = entry.contentRect ? entry.contentRect.height : this.container.clientHeight;
+      this.handleResize(cssW, cssH);
+    });
     this.resizeObserver.observe(this.container);
 
     this.bindHoverEvents();
     this.initDefaultData();
   }
 
-  resize() {
-    const rect = this.container.getBoundingClientRect();
+  handleResize(cssW, cssH, immediate = false) {
+    const w = Math.round(cssW);
+    const h = Math.round(cssH);
     const dpr = window.devicePixelRatio || 1;
-    const w = Math.round(rect.width);
-    const h = Math.round(rect.height);
 
-    if (w === this._lastW && h === this._lastH && dpr === this._lastDpr) return;
-    this._lastW = w;
-    this._lastH = h;
-    this._lastDpr = dpr;
+    if (w <= 0 || h <= 0) return;
+    if (w === this._appliedW && h === this._appliedH && dpr === this._appliedDpr) return;
+
+    this._nextW = w;
+    this._nextH = h;
+    this._nextDpr = dpr;
+
+    if (immediate) {
+      this._applyResize();
+      return;
+    }
+
+    if (this._resizePending) return;
+    this._resizePending = true;
+
+    requestAnimationFrame(() => {
+      this._resizePending = false;
+      this._applyResize();
+    });
+  }
+
+  _applyResize() {
+    const w = this._nextW;
+    const h = this._nextH;
+    const dpr = this._nextDpr;
+    if (!w || !h) return;
+    if (w === this._appliedW && h === this._appliedH && dpr === this._appliedDpr) return;
+
+    this._appliedW = w;
+    this._appliedH = h;
+    this._appliedDpr = dpr;
 
     this.dpr = dpr;
-    this.width = w || 480;
-    this.height = h || 120;
+    this.width = w;
+    this.height = h;
 
-    this.canvas.width = Math.round(this.width * this.dpr);
-    this.canvas.height = Math.round(this.height * this.dpr);
-    this.canvas.style.width = `${this.width}px`;
-    this.canvas.style.height = `${this.height}px`;
-
-    this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    this.canvas.width = Math.round(w * dpr);
+    this.canvas.height = Math.round(h * dpr);
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.render();
+  }
+
+  resize() {
+    const rect = this.container.getBoundingClientRect();
+    this.handleResize(rect.width, rect.height, false);
+  }
+
+  destroy() {
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
   }
 
   bindHoverEvents() {
@@ -132,9 +181,24 @@ class MetricsChart {
     const chartW = w - padLeft - padRight;
     const chartH = h - padTop - padBottom;
 
-    // Clean rounded max ceiling for Y-axis (no weird 002.3ms)
-    const rawMax = Math.max(...this.dataPoints.map(d => d.latency), 1.5);
-    const maxLat = Math.max(1.0, Math.ceil(rawMax * 2) / 2);
+    // Outlier-resistant rolling Y-axis max (p95 / 3.5x median cap)
+    const validLats = this.dataPoints.map(d => d.latency).filter(v => v > 0);
+    let maxLat = 2.0;
+    if (validLats.length > 0) {
+      const sorted = [...validLats].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      const median = sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+      const p95Idx = Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95));
+      const p95 = sorted[p95Idx];
+
+      // Cap to prevent a single 2003ms timeout outlier from permanently flattening the graph
+      const cap = Math.max(median * 3.5, p95, 1.5);
+      const nonOutliers = sorted.filter(v => v <= cap);
+      const peak = nonOutliers.length > 0 ? nonOutliers[nonOutliers.length - 1] : cap;
+
+      maxLat = Math.max(1.5, Math.ceil(peak * 1.3 * 2) / 2);
+      if (maxLat > 10) maxLat = Math.ceil(maxLat / 5) * 5;
+    }
 
     // 1. Draw Grid Lines & Rounded Tick Values
     ctx.save();

@@ -63,9 +63,11 @@ class DashboardApp {
     // Start SSE stream with automatic fallback if no event received within 2s
     this.initSSE();
     this.startPolling();
+    this.startSharedAnimationLoop();
   }
 
   initDebugBar() {
+    window._debugObserverFires = 0;
     if (window.location.search.includes('debug=1')) {
       const db = document.getElementById('debugBar');
       if (db) db.classList.remove('hidden');
@@ -91,6 +93,76 @@ class DashboardApp {
       sseEl.textContent = state;
       sseEl.className = `debug-val ${cssClass}`;
     }
+  }
+
+  updateDebugBarMetrics() {
+    if (!window.location.search.includes('debug=1')) return;
+
+    const frameEl = document.getElementById('debugFrameTime');
+    if (frameEl && this._lastFrameTimeMs !== undefined) {
+      frameEl.textContent = `${this._lastFrameTimeMs.toFixed(1)} ms`;
+      frameEl.className = `debug-val ${this._lastFrameTimeMs > 25 ? 'state-warn' : 'state-ok'}`;
+    }
+
+    const roEl = document.getElementById('debugRoFires');
+    if (roEl) {
+      const fires = this._observerFiresPerSec || 0;
+      roEl.textContent = `${fires} /s`;
+      roEl.className = `debug-val ${fires > 2 ? 'state-warn' : 'state-ok'}`;
+    }
+
+    const sizeEl = document.getElementById('debugCanvasSizes');
+    if (sizeEl) {
+      const tW = this.topoCanvas ? this.topoCanvas.width : 0;
+      const tH = this.topoCanvas ? this.topoCanvas.height : 0;
+      const cW = this.metricsChart ? this.metricsChart.width : 0;
+      const cH = this.metricsChart ? this.metricsChart.height : 0;
+      sizeEl.textContent = `T:${tW}x${tH} | C:${cW}x${cH}`;
+    }
+  }
+
+  startSharedAnimationLoop() {
+    if (this._animRunning) return;
+    this._animRunning = true;
+    let lastTime = performance.now();
+    let frameCount = 0;
+    let lastSecTime = lastTime;
+
+    const tick = (now) => {
+      if (!this._animRunning) return;
+
+      const delta = now - lastTime;
+      lastTime = now;
+      this._lastFrameTimeMs = delta;
+
+      // Rate tracking for ?debug=1
+      frameCount++;
+      if (now - lastSecTime >= 1000) {
+        this._observerFiresPerSec = window._debugObserverFires || 0;
+        window._debugObserverFires = 0;
+        frameCount = 0;
+        lastSecTime = now;
+        this.updateDebugBarMetrics();
+      }
+
+      // Step Topology Canvas
+      if (this.topoCanvas && this.topoCanvas.step) {
+        this.topoCanvas.step(now, delta);
+      }
+
+      // Step Connection Gauge if animating
+      if (this.connGauge && this.connGauge.step) {
+        this.connGauge.step();
+      }
+
+      requestAnimationFrame(tick);
+    };
+
+    requestAnimationFrame(tick);
+  }
+
+  stopSharedAnimationLoop() {
+    this._animRunning = false;
   }
 
   initWatchdog() {
@@ -392,8 +464,10 @@ class DashboardApp {
     // Tab Visibility Optimization
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
+        this.stopSharedAnimationLoop();
         if (this.topoCanvas && this.topoCanvas.stopLoop) this.topoCanvas.stopLoop();
       } else {
+        this.startSharedAnimationLoop();
         if (this.topoCanvas && this.topoCanvas.startLoop) this.topoCanvas.startLoop();
       }
     });
@@ -457,7 +531,8 @@ class DashboardApp {
     const startTime = performance.now();
     const diff = endVal - startVal;
     if (Math.abs(diff) < 0.001) {
-      element.textContent = formatFn(endVal);
+      const formatted = formatFn(endVal);
+      if (element.textContent !== formatted) element.textContent = formatted;
       return;
     }
 
@@ -466,12 +541,14 @@ class DashboardApp {
       const progress = Math.min(1.0, elapsed / durationMs);
       const ease = 1 - Math.pow(1 - progress, 3);
       const current = startVal + diff * ease;
-      element.textContent = formatFn(current);
+      const formatted = formatFn(current);
+      if (element.textContent !== formatted) element.textContent = formatted;
 
       if (progress < 1.0) {
         requestAnimationFrame(step);
       } else {
-        element.textContent = formatFn(endVal);
+        const finalFormatted = formatFn(endVal);
+        if (element.textContent !== finalFormatted) element.textContent = finalFormatted;
       }
     };
     requestAnimationFrame(step);
@@ -479,7 +556,8 @@ class DashboardApp {
 
   updateHeaderStatus(data) {
     const ctrlText = document.getElementById('controllerText');
-    if (ctrlText) ctrlText.textContent = data.controller?.status || 'ONLINE';
+    const targetStatus = data.controller?.status || 'ONLINE';
+    if (ctrlText && ctrlText.textContent !== targetStatus) ctrlText.textContent = targetStatus;
 
     // Failover status
     const failoverPill = document.getElementById('failoverStatus');
@@ -501,13 +579,13 @@ class DashboardApp {
     }
 
     if (isFailover) {
-      if (failoverDot) failoverDot.className = 'status-dot dot-cyan';
-      if (failoverText) failoverText.textContent = 'FAILOVER ACTIVE';
-      if (failoverPill) failoverPill.style.borderColor = 'rgba(6, 182, 212, 0.5)';
+      if (failoverDot && failoverDot.className !== 'status-dot dot-cyan') failoverDot.className = 'status-dot dot-cyan';
+      if (failoverText && failoverText.textContent !== 'FAILOVER ACTIVE') failoverText.textContent = 'FAILOVER ACTIVE';
+      if (failoverPill && failoverPill.style.borderColor !== 'rgba(6, 182, 212, 0.5)') failoverPill.style.borderColor = 'rgba(6, 182, 212, 0.5)';
     } else {
-      if (failoverDot) failoverDot.className = 'status-dot dot-gray';
-      if (failoverText) failoverText.textContent = 'NORMAL';
-      if (failoverPill) failoverPill.style.borderColor = '';
+      if (failoverDot && failoverDot.className !== 'status-dot dot-gray') failoverDot.className = 'status-dot dot-gray';
+      if (failoverText && failoverText.textContent !== 'NORMAL') failoverText.textContent = 'NORMAL';
+      if (failoverPill && failoverPill.style.borderColor !== '') failoverPill.style.borderColor = '';
     }
 
     // Server 1 overload status
@@ -531,13 +609,13 @@ class DashboardApp {
     }
 
     if (isOverload) {
-      if (serverDot) serverDot.className = 'status-dot dot-red';
-      if (serverText) serverText.textContent = 'OVERLOAD';
-      if (serverPill) serverPill.style.borderColor = 'rgba(239, 68, 68, 0.5)';
+      if (serverDot && serverDot.className !== 'status-dot dot-red') serverDot.className = 'status-dot dot-red';
+      if (serverText && serverText.textContent !== 'OVERLOAD') serverText.textContent = 'OVERLOAD';
+      if (serverPill && serverPill.style.borderColor !== 'rgba(239, 68, 68, 0.5)') serverPill.style.borderColor = 'rgba(239, 68, 68, 0.5)';
     } else {
-      if (serverDot) serverDot.className = 'status-dot dot-green';
-      if (serverText) serverText.textContent = 'HEALTHY';
-      if (serverPill) serverPill.style.borderColor = '';
+      if (serverDot && serverDot.className !== 'status-dot dot-green') serverDot.className = 'status-dot dot-green';
+      if (serverText && serverText.textContent !== 'HEALTHY') serverText.textContent = 'HEALTHY';
+      if (serverPill && serverPill.style.borderColor !== '') serverPill.style.borderColor = '';
     }
 
     // Active connections counter tween
@@ -556,11 +634,8 @@ class DashboardApp {
     const recEl = document.getElementById('metricRecovery');
     if (recEl && data.last_recovery_ms !== undefined && data.last_recovery_ms !== null) {
       const recVal = parseFloat(data.last_recovery_ms);
-      if (recVal > 0) {
-        recEl.textContent = `${recVal.toFixed(2)}`;
-      } else {
-        recEl.textContent = '--';
-      }
+      const targetText = recVal > 0 ? `${recVal.toFixed(2)}` : '--';
+      if (recEl.textContent !== targetText) recEl.textContent = targetText;
     }
   }
 
