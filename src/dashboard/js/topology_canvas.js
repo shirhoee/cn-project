@@ -378,16 +378,15 @@ class TopologyCanvas {
       const pulseWidth = 3.5 + 1.2 * Math.abs(Math.sin(this.pulseAngle * 1.5));
       this.drawGlowLine(ctx, s2, s3, '#64d2ff', pulseWidth);
 
-      // Traveling photon pulse along active failover corridor
+      // Traveling photon pulse along active failover corridor (pre-rendered glow sprite)
       const sweepT = (Math.sin(this.pulseAngle * 1.8) + 1) / 2;
       const sweepX = s2.x + (s3.x - s2.x) * sweepT;
       const sweepY = s2.y + (s3.y - s2.y) * sweepT;
       ctx.save();
+      window.glowCache.drawGlow(ctx, sweepX, sweepY, '#64d2ff', 4.5, 14);
       ctx.beginPath();
-      ctx.arc(sweepX, sweepY, 5.5, 0, Math.PI * 2);
+      ctx.arc(sweepX, sweepY, 4, 0, Math.PI * 2);
       ctx.fillStyle = '#ffffff';
-      ctx.shadowColor = '#64d2ff';
-      ctx.shadowBlur = 18;
       ctx.fill();
       ctx.restore();
 
@@ -421,22 +420,23 @@ class TopologyCanvas {
   }
 
   drawConduit(ctx, from, to, color, width) {
-    // Multi-layer luminous conduit
+    // Multi-layer luminous conduit (two-pass rasterization without software shadowBlur)
     ctx.save();
     // Ambient wide glow
     ctx.strokeStyle = color;
-    ctx.lineWidth = width + 4;
-    ctx.globalAlpha = 0.15;
+    ctx.lineWidth = width + 5;
+    ctx.globalAlpha = 0.2;
     ctx.beginPath();
     ctx.moveTo(from.x, from.y);
     ctx.lineTo(to.x, to.y);
     ctx.stroke();
 
     // High-contrast core line
-    ctx.globalAlpha = 0.85;
+    ctx.globalAlpha = 0.9;
     ctx.lineWidth = width;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
     ctx.stroke();
     ctx.restore();
   }
@@ -479,10 +479,18 @@ class TopologyCanvas {
 
   drawGlowLine(ctx, from, to, color, width) {
     ctx.save();
+    // Ambient luminous glow pass
     ctx.strokeStyle = color;
+    ctx.lineWidth = width + 7;
+    ctx.globalAlpha = 0.28;
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+    ctx.stroke();
+
+    // Sharp core line pass
     ctx.lineWidth = width;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 14;
+    ctx.globalAlpha = 1.0;
     ctx.beginPath();
     ctx.moveTo(from.x, from.y);
     ctx.lineTo(to.x, to.y);
@@ -533,13 +541,12 @@ class TopologyCanvas {
         ctx.fill();
       }
 
-      // Luminous photon core
+      // Luminous photon core via cached offscreen glow sprite + crisp core
       ctx.globalAlpha = 1.0;
+      window.glowCache.drawGlow(ctx, curX, curY, p.color, p.radius, 12);
       ctx.beginPath();
       ctx.arc(curX, curY, p.radius, 0, Math.PI * 2);
       ctx.fillStyle = '#ffffff';
-      ctx.shadowColor = p.color;
-      ctx.shadowBlur = 12;
       ctx.fill();
     }
     ctx.restore();
@@ -560,29 +567,30 @@ class TopologyCanvas {
         const x = n.x - size / 2;
         const y = n.y - size / 2;
 
-        // Milled Squircle Switch with radial metallic gradient
+        // Hover halo via offscreen sprite
+        if (isHovered) {
+          window.glowCache.drawGlow(ctx, n.x, n.y, '#0a84ff', n.radius, 16);
+        }
+
+        // Milled Squircle Switch with metallic gradient
         const grad = ctx.createRadialGradient(n.x, n.y - 8, 2, n.x, n.y, n.radius * 1.5);
         grad.addColorStop(0, '#2c2c2e');
         grad.addColorStop(1, '#151518');
         ctx.fillStyle = grad;
-        ctx.shadowColor = isHovered ? '#0a84ff' : 'rgba(0, 0, 0, 0.6)';
-        ctx.shadowBlur = isHovered ? 20 : 10;
         this.roundRect(ctx, x, y, size, size, 11, true, false);
 
         // Specular inner light edge (Top Chamfer)
-        ctx.shadowBlur = 0;
         ctx.strokeStyle = isHovered ? '#0a84ff' : 'rgba(255, 255, 255, 0.16)';
         ctx.lineWidth = 1;
         this.roundRect(ctx, x + 0.5, y + 0.5, size - 1, size - 1, 10.5, false, true);
 
         // Status pearl on switch
+        const pearlColor = n.id === 's1' ? '#0a84ff' : '#64d2ff';
+        window.glowCache.drawGlow(ctx, n.x, n.y - 8, pearlColor, 3.5, 8);
         ctx.beginPath();
         ctx.arc(n.x, n.y - 8, 3.5, 0, Math.PI * 2);
-        ctx.fillStyle = n.id === 's1' ? '#0a84ff' : '#64d2ff';
-        ctx.shadowColor = ctx.fillStyle;
-        ctx.shadowBlur = 8;
+        ctx.fillStyle = pearlColor;
         ctx.fill();
-        ctx.shadowBlur = 0;
 
         // Switch ID & OpenFlow badge
         ctx.fillStyle = '#ffffff';
@@ -600,6 +608,13 @@ class TopologyCanvas {
         const isOverload = n.id === 'server1' && this.state.server1Overload;
         const color = isOverload ? '#ff453a' : n.color;
 
+        // Halo glow via offscreen sprite
+        if (isOverload) {
+          window.glowCache.drawGlow(ctx, n.x, n.y, '#ff453a', n.radius, 16);
+        } else if (isHovered) {
+          window.glowCache.drawGlow(ctx, n.x, n.y, color, n.radius, 12);
+        }
+
         // Concentric circular node
         ctx.beginPath();
         ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
@@ -611,11 +626,8 @@ class TopologyCanvas {
 
         ctx.strokeStyle = isHovered ? '#ffffff' : color;
         ctx.lineWidth = isHovered ? 2.8 : 1.8;
-        ctx.shadowColor = color;
-        ctx.shadowBlur = isOverload ? 20 : 10;
         ctx.stroke();
 
-        ctx.shadowBlur = 0;
         ctx.fillStyle = color;
         ctx.font = '700 10.5px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif';
         ctx.textAlign = 'center';
@@ -629,6 +641,10 @@ class TopologyCanvas {
         }
 
       } else if (n.type === 'client') {
+        if (isHovered) {
+          window.glowCache.drawGlow(ctx, n.x, n.y, n.color, n.radius, 12);
+        }
+
         ctx.beginPath();
         ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
         const grad = ctx.createRadialGradient(n.x, n.y - 5, 2, n.x, n.y, n.radius * 1.4);
@@ -639,11 +655,8 @@ class TopologyCanvas {
 
         ctx.strokeStyle = isHovered ? '#ffffff' : n.color;
         ctx.lineWidth = isHovered ? 2.8 : 1.8;
-        ctx.shadowColor = n.color;
-        ctx.shadowBlur = 8;
         ctx.stroke();
 
-        ctx.shadowBlur = 0;
         ctx.fillStyle = n.color;
         ctx.font = '700 9.5px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif';
         ctx.textAlign = 'center';
@@ -718,21 +731,27 @@ class TopologyCanvas {
     }
 
     ctx.save();
-    ctx.strokeStyle = '#64d2ff';
-    ctx.lineWidth = 4;
-    ctx.shadowColor = '#64d2ff';
-    ctx.shadowBlur = 16;
     ctx.setLineDash([8, 8]);
     ctx.lineDashOffset = this.dashOffset * 2.2;
+
+    // Two-pass luminous path trace (halo pass + core pass)
     ctx.beginPath();
     ctx.moveTo(hops[0].x, hops[0].y);
     for (let i = 1; i < hops.length; i++) {
       if (hops[i]) ctx.lineTo(hops[i].x, hops[i].y);
     }
+    ctx.strokeStyle = '#64d2ff';
+    ctx.lineWidth = 8;
+    ctx.globalAlpha = 0.3;
+    ctx.stroke();
+
+    ctx.lineWidth = 3.5;
+    ctx.globalAlpha = 1.0;
     ctx.stroke();
 
     for (const ep of [this.traceSource, this.traceTarget]) {
       if (ep) {
+        window.glowCache.drawGlow(ctx, ep.x, ep.y, '#64d2ff', ep.radius + 6, 10);
         ctx.beginPath();
         ctx.arc(ep.x, ep.y, ep.radius + 6, 0, Math.PI * 2);
         ctx.strokeStyle = '#64d2ff';
@@ -756,13 +775,16 @@ class TopologyCanvas {
       }
 
       ctx.save();
+      // Two-pass luminous ripple ring
       ctx.beginPath();
       ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
       ctx.strokeStyle = r.color;
+      ctx.lineWidth = 6;
+      ctx.globalAlpha = Math.max(0, r.alpha * 0.35);
+      ctx.stroke();
+
       ctx.lineWidth = 2;
       ctx.globalAlpha = Math.max(0, r.alpha);
-      ctx.shadowColor = r.color;
-      ctx.shadowBlur = 12;
       ctx.stroke();
       ctx.restore();
     }
@@ -786,15 +808,12 @@ class TopologyCanvas {
     const tx = Math.min(this.width - tw - 15, Math.max(15, node.x + 25));
     const ty = Math.min(this.height - th - 15, Math.max(15, node.y - 20));
 
-    // macOS Quick Look smoked glass popover
+    // macOS Quick Look smoked glass popover (clean border + dark material)
     ctx.fillStyle = 'rgba(22, 22, 26, 0.96)';
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
     ctx.lineWidth = 1;
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
-    ctx.shadowBlur = 16;
     this.roundRect(ctx, tx, ty, tw, th, 9, true, true);
 
-    ctx.shadowBlur = 0;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     lines.forEach((l, idx) => {

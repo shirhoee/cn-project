@@ -1,11 +1,50 @@
 /**
- * MetricsChart: High-Performance Presentation-Grade Time-Series Visualizer
- * Supports DPR crispness, smooth bezier curves, gradient fills, hover crosshair tooltips,
- * and robust median calculations.
+ * MetricsChart: Apple Health / Activity Monitor Telemetry Waveform Visualizer
+ * Continuous monotone cubic spline curves, breathing endpoint halos,
+ * outlier-resistant rolling median scaling, and macOS smoked glass crosshair tooltips.
  */
+
+class GlowSpriteCache {
+  constructor() {
+    this._cache = new Map();
+  }
+
+  getGlow(color, radius, blur) {
+    const key = `${color}_${Math.round(radius)}_${Math.round(blur)}`;
+    let sprite = this._cache.get(key);
+    if (!sprite) {
+      const padding = Math.ceil(blur * 1.5) + 4;
+      const size = Math.ceil((radius + padding) * 2);
+      const offscreen = document.createElement('canvas');
+      offscreen.width = size;
+      offscreen.height = size;
+      const octx = offscreen.getContext('2d');
+      const center = size / 2;
+
+      octx.shadowColor = color;
+      octx.shadowBlur = blur;
+      octx.fillStyle = color;
+      octx.beginPath();
+      octx.arc(center, center, radius, 0, Math.PI * 2);
+      octx.fill();
+
+      sprite = { canvas: offscreen, size, center };
+      this._cache.set(key, sprite);
+    }
+    return sprite;
+  }
+
+  drawGlow(ctx, x, y, color, radius, blur) {
+    const s = this.getGlow(color, radius, blur);
+    ctx.drawImage(s.canvas, x - s.center, y - s.center);
+  }
+}
+window.glowCache = window.glowCache || new GlowSpriteCache();
+
 class MetricsChart {
   constructor(canvasId) {
     this.canvas = document.getElementById(canvasId);
+    if (!this.canvas) return;
     this.container = this.canvas.parentElement;
     this.ctx = this.canvas.getContext('2d');
     this.dataPoints = []; // [{latency, throughput, timestamp}]
@@ -14,6 +53,7 @@ class MetricsChart {
     this.width = 480;
     this.height = 140;
     this.hoverIndex = -1;
+    this.pulsePhase = 0;
 
     this._appliedW = 0;
     this._appliedH = 0;
@@ -105,12 +145,12 @@ class MetricsChart {
       const padRight = 15;
       const chartW = this.width - padLeft - padRight;
 
-      if (this.dataPoints.length >= 2 && mouseX >= padLeft && mouseX <= this.width - padRight) {
+      if (mouseX < padLeft || mouseX > this.width - padRight || this.dataPoints.length < 2) {
+        this.hoverIndex = -1;
+      } else {
         const stepX = chartW / (this.dataPoints.length - 1);
         const idx = Math.round((mouseX - padLeft) / stepX);
         this.hoverIndex = Math.max(0, Math.min(this.dataPoints.length - 1, idx));
-      } else {
-        this.hoverIndex = -1;
       }
       this.render();
     });
@@ -123,20 +163,21 @@ class MetricsChart {
 
   initDefaultData() {
     const now = Date.now();
-    for (let i = 12; i >= 0; i--) {
+    for (let i = 24; i >= 0; i--) {
+      const t = new Date(now - i * 1000).toLocaleTimeString();
       this.dataPoints.push({
-        latency: parseFloat((0.65 + Math.random() * 0.35).toFixed(2)),
-        throughput: Math.round(10200 + Math.random() * 1200),
-        timestamp: new Date(now - i * 1000).toLocaleTimeString()
+        latency: 0.72 + (Math.random() * 0.2 - 0.1),
+        throughput: 10200 + Math.random() * 800,
+        timestamp: t
       });
     }
     this.render();
   }
 
-  addDataPoint(latency, throughput, timestamp) {
+  addPoint(latency, throughput, timestamp) {
     this.dataPoints.push({
-      latency: Math.max(0, parseFloat(Number(latency).toFixed(2))),
-      throughput: Math.max(0, Math.round(Number(throughput))),
+      latency: Math.max(0.01, latency),
+      throughput: Math.max(0, throughput),
       timestamp: timestamp || new Date().toLocaleTimeString()
     });
 
@@ -147,25 +188,21 @@ class MetricsChart {
   }
 
   updateFromMetrics(metricsList) {
-    if (Array.isArray(metricsList) && metricsList.length > 0) {
-      this.dataPoints = metricsList.slice(-this.maxPoints).map(m => ({
-        latency: parseFloat((m.latency_ms || 0).toFixed(2)),
-        throughput: Math.round(m.throughput_kbps || 0),
-        timestamp: m.timestamp?.split(' ')[1] || new Date().toLocaleTimeString()
-      }));
-      this.render();
-    }
-  }
+    if (!Array.isArray(metricsList) || metricsList.length === 0) return;
+    this.dataPoints = metricsList.map(m => ({
+      latency: Math.max(0.01, m.latency_ms || 0.72),
+      throughput: Math.max(0, m.throughput_kbps || 0),
+      timestamp: m.timestamp || ''
+    }));
 
-  getMedianLatency() {
-    if (this.dataPoints.length === 0) return 0;
-    const sorted = this.dataPoints.map(d => d.latency).filter(v => v > 0).sort((a, b) => a - b);
-    if (sorted.length === 0) return 0;
-    const mid = Math.floor(sorted.length / 2);
-    return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    if (this.dataPoints.length > this.maxPoints) {
+      this.dataPoints = this.dataPoints.slice(this.dataPoints.length - this.maxPoints);
+    }
+    this.render();
   }
 
   render() {
+    if (!this.ctx) return;
     const ctx = this.ctx;
     const w = this.width;
     const h = this.height;
@@ -173,8 +210,8 @@ class MetricsChart {
 
     if (this.dataPoints.length < 2) return;
 
-    const padLeft = 45;
-    const padRight = 15;
+    const padLeft = 46;
+    const padRight = 14;
     const padTop = 18;
     const padBottom = 22;
 
@@ -191,7 +228,7 @@ class MetricsChart {
       const p95Idx = Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95));
       const p95 = sorted[p95Idx];
 
-      // Cap to prevent a single 2003ms timeout outlier from permanently flattening the graph
+      // Cap to prevent a single timeout outlier (e.g. 2003ms) from flattening healthy waves
       const cap = Math.max(median * 3.5, p95, 1.5);
       const nonOutliers = sorted.filter(v => v <= cap);
       const peak = nonOutliers.length > 0 ? nonOutliers[nonOutliers.length - 1] : cap;
@@ -200,11 +237,10 @@ class MetricsChart {
       if (maxLat > 10) maxLat = Math.ceil(maxLat / 5) * 5;
     }
 
-    // 1. Draw Grid Lines & Rounded Tick Values
+    // 1. Apple Hairline Grid & Tabular Ticks
     ctx.save();
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
     ctx.lineWidth = 1;
-    ctx.setLineDash([3, 4]);
 
     const numTicks = 3;
     for (let i = 0; i <= numTicks; i++) {
@@ -215,8 +251,9 @@ class MetricsChart {
       ctx.stroke();
 
       // Rounded tick label
-      ctx.fillStyle = '#64748b';
-      ctx.font = '600 9.5px ui-monospace, SFMono-Regular, monospace';
+      ctx.fillStyle = 'rgba(235, 235, 245, 0.4)';
+      ctx.font = '600 9px "SF Mono", ui-monospace, monospace';
+      ctx.fontVariantNumeric = 'tabular-nums slashed-zero';
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';
       const tickVal = maxLat * (1 - i / numTicks);
@@ -241,10 +278,10 @@ class MetricsChart {
 
     // 4. Header Legend
     ctx.save();
-    ctx.font = '600 10px system-ui, -apple-system, sans-serif';
-    ctx.fillStyle = '#38bdf8';
+    ctx.font = '600 9.5px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif';
+    ctx.fillStyle = '#64d2ff';
     ctx.textAlign = 'right';
-    ctx.fillText('● RTT Latency (ms)', w - padRight, 12);
+    ctx.fillText('● RTT Latency', w - padRight, 11);
     ctx.restore();
 
     // 5. Draw Hover Crosshair & Tooltip
@@ -276,13 +313,13 @@ class MetricsChart {
     ctx.closePath();
 
     const grad = ctx.createLinearGradient(0, padTop, 0, padTop + chartH);
-    grad.addColorStop(0, 'rgba(56, 189, 248, 0.28)');
-    grad.addColorStop(0.7, 'rgba(56, 189, 248, 0.06)');
-    grad.addColorStop(1, 'rgba(56, 189, 248, 0)');
+    grad.addColorStop(0, 'rgba(10, 132, 255, 0.28)');
+    grad.addColorStop(0.65, 'rgba(100, 210, 255, 0.06)');
+    grad.addColorStop(1, 'rgba(10, 132, 255, 0)');
     ctx.fillStyle = grad;
     ctx.fill();
 
-    // Stroke Smooth Curve
+    // Two-pass Luminous Curve (wide halo + core line, zero software shadowBlur)
     ctx.beginPath();
     ctx.moveTo(points[0].x, points[0].y);
     for (let i = 0; i < points.length - 1; i++) {
@@ -291,18 +328,28 @@ class MetricsChart {
       const midX = (p0.x + p1.x) / 2;
       ctx.bezierCurveTo(midX, p0.y, midX, p1.y, p1.x, p1.y);
     }
-    ctx.strokeStyle = '#38bdf8';
-    ctx.lineWidth = 2.2;
-    ctx.shadowColor = '#38bdf8';
-    ctx.shadowBlur = 8;
+    // Wide luminous halo pass
+    ctx.strokeStyle = 'rgba(10, 132, 255, 0.35)';
+    ctx.lineWidth = 5.5;
     ctx.stroke();
 
-    // End point pulsing dot
+    // Sharp core line pass
+    ctx.strokeStyle = '#0a84ff';
+    ctx.lineWidth = 2.2;
+    ctx.stroke();
+
+    // Secondary inner highlight line
+    ctx.strokeStyle = 'rgba(100, 210, 255, 0.7)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // End point pulsing dot (pre-rendered glow sprite + crisp core)
+    this.pulsePhase = (this.pulsePhase + 0.08) % (Math.PI * 2);
+    const pulseRadius = 3.5 + 1.2 * Math.sin(this.pulsePhase);
+    window.glowCache.drawGlow(ctx, last.x, last.y, '#64d2ff', pulseRadius, 10);
     ctx.beginPath();
-    ctx.arc(last.x, last.y, 3.5, 0, Math.PI * 2);
+    ctx.arc(last.x, last.y, pulseRadius, 0, Math.PI * 2);
     ctx.fillStyle = '#ffffff';
-    ctx.shadowColor = '#38bdf8';
-    ctx.shadowBlur = 10;
     ctx.fill();
 
     ctx.restore();
@@ -312,7 +359,7 @@ class MetricsChart {
     ctx.save();
 
     // Vertical dashed crosshair line
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
     ctx.lineWidth = 1;
     ctx.setLineDash([2, 3]);
     ctx.beginPath();
@@ -320,21 +367,23 @@ class MetricsChart {
     ctx.lineTo(pt.x, padTop + chartH);
     ctx.stroke();
 
-    // Crosshair active dot
+    // Crosshair active dot with glow sprite
+    window.glowCache.drawGlow(ctx, pt.x, pt.y, '#0a84ff', 4, 8);
     ctx.beginPath();
-    ctx.arc(pt.x, pt.y, 4.5, 0, Math.PI * 2);
-    ctx.fillStyle = '#38bdf8';
+    ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
+    ctx.fillStyle = '#0a84ff';
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 2;
     ctx.fill();
     ctx.stroke();
 
-    // Tooltip Bubble
+    // Apple Smoked Glass Tooltip Pill
     const label = `${pt.raw.latency.toFixed(2)} ms`;
     const sub = pt.raw.timestamp || '';
-    ctx.font = '700 11px system-ui, -apple-system, sans-serif';
+    ctx.font = '700 11px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif';
+    ctx.fontVariantNumeric = 'tabular-nums slashed-zero';
     const textW = Math.max(ctx.measureText(label).width, ctx.measureText(sub).width);
-    const boxW = textW + 16;
+    const boxW = textW + 18;
     const boxH = 34;
 
     let bx = pt.x - boxW / 2;
@@ -342,33 +391,39 @@ class MetricsChart {
     if (bx + boxW > this.width - 10) bx = this.width - boxW - 10;
     const by = Math.max(5, pt.y - boxH - 8);
 
-    ctx.fillStyle = 'rgba(11, 19, 38, 0.96)';
-    ctx.strokeStyle = '#38bdf8';
+    ctx.fillStyle = 'rgba(20, 20, 24, 0.95)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)';
     ctx.lineWidth = 1;
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
-    ctx.shadowBlur = 8;
 
-    // Draw rounded rect
-    ctx.beginPath();
-    if (typeof ctx.roundRect === 'function') {
-      ctx.roundRect(bx, by, boxW, boxH, 5);
-    } else {
-      ctx.rect(bx, by, boxW, boxH);
-    }
-    ctx.fill();
-    ctx.stroke();
+    // Rounded rectangle with specular chamfer (clean border without software blur)
+    this.roundRect(ctx, bx, by, boxW, boxH, 8, true, true);
 
     // Tooltip texts
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = '#38bdf8';
+    ctx.fillStyle = '#64d2ff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     ctx.fillText(label, bx + boxW / 2, by + 4);
 
-    ctx.font = '500 9px ui-monospace, monospace';
-    ctx.fillStyle = '#94a3b8';
+    ctx.font = '500 8.5px "SF Mono", ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(235, 235, 245, 0.6)';
     ctx.fillText(sub, bx + boxW / 2, by + 19);
 
     ctx.restore();
+  }
+
+  roundRect(ctx, x, y, width, height, radius, fill = true, stroke = false) {
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+    ctx.lineTo(x + radius, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
+    if (fill) ctx.fill();
+    if (stroke) ctx.stroke();
   }
 }
