@@ -694,6 +694,7 @@ class DashboardApp {
     const container = document.querySelector('.table-container');
     const prevScroll = container ? container.scrollTop : 0;
     const tbody = document.getElementById('flowTableBody');
+    if (!tbody) return;
     const flows = this.flowsData[this.currentDpid] || [];
 
     // Track flow rule changes & display diff chip
@@ -712,43 +713,66 @@ class DashboardApp {
     }
     this.lastFlowCount[this.currentDpid] = flows.length;
 
-    const flowKey = flows.map(f => `${f.priority}_${f.match}_${f.actions}`).join('|');
-    this._lastFlowKeys = this._lastFlowKeys || {};
-    if (this._lastFlowKeys[this.currentDpid] === flowKey) {
-      return; // Skip re-rendering if unchanged
-    }
-    this._lastFlowKeys[this.currentDpid] = flowKey;
-
     if (flows.length === 0) {
       tbody.innerHTML = `<tr><td colspan="5" class="empty-state">No active flow rules recorded for Switch ${this.currentDpid} yet.</td></tr>`;
       return;
     }
 
-    tbody.innerHTML = flows.map(f => {
-      let badgeClass = 'flow-static';
-      let rowHighlight = '';
-      if (f.type === 'DYNAMIC_NAT') {
-        badgeClass = 'flow-nat';
-        rowHighlight = 'style="background: rgba(245, 158, 11, 0.08);"';
-      } else if (f.type === 'DYNAMIC_FAILOVER') {
-        badgeClass = 'flow-failover';
-        rowHighlight = 'style="background: rgba(6, 182, 212, 0.08);"';
-      } else if (f.type === 'LOOP_GUARD') {
-        badgeClass = 'flow-guard';
-      } else if (f.type === 'TABLE_MISS') {
-        badgeClass = 'flow-miss';
-      }
+    // Keyed DOM diff: reuse existing <tr> rows, avoid innerHTML rebuild
+    const existingRows = new Map();
+    for (const row of Array.from(tbody.querySelectorAll('tr[data-flow-key]'))) {
+      existingRows.set(row.dataset.flowKey, row);
+    }
 
-      return `
-        <tr ${rowHighlight}>
+    const fragment = document.createDocumentFragment();
+    const activeKeys = new Set();
+
+    for (const f of flows) {
+      const key = `${f.priority}_${f.match}_${f.actions}`;
+      activeKeys.add(key);
+
+      let row = existingRows.get(key);
+      if (!row) {
+        row = document.createElement('tr');
+        row.dataset.flowKey = key;
+
+        let badgeClass = 'flow-static';
+        if (f.type === 'DYNAMIC_NAT') {
+          badgeClass = 'flow-nat';
+          row.style.background = 'rgba(245, 158, 11, 0.08)';
+        } else if (f.type === 'DYNAMIC_FAILOVER') {
+          badgeClass = 'flow-failover';
+          row.style.background = 'rgba(6, 182, 212, 0.08)';
+        } else if (f.type === 'LOOP_GUARD') {
+          badgeClass = 'flow-guard';
+        } else if (f.type === 'TABLE_MISS') {
+          badgeClass = 'flow-miss';
+        }
+
+        row.innerHTML = `
           <td><strong>${f.priority}</strong></td>
           <td><span class="flow-badge ${badgeClass}">${f.type}</span></td>
           <td><code>${this.escapeHtml(f.match)}</code></td>
           <td><code>${this.escapeHtml(f.actions)}</code></td>
           <td style="color: #94a3b8;">${this.escapeHtml(f.desc || '')}</td>
-        </tr>
-      `;
-    }).join('');
+        `;
+      } else {
+        const descCell = row.cells[4];
+        if (descCell && descCell.textContent !== (f.desc || '')) {
+          descCell.textContent = f.desc || '';
+        }
+      }
+      fragment.appendChild(row);
+    }
+
+    // Remove obsolete rows or empty-state row
+    for (const child of Array.from(tbody.children)) {
+      if (!child.dataset.flowKey || !activeKeys.has(child.dataset.flowKey)) {
+        tbody.removeChild(child);
+      }
+    }
+
+    tbody.appendChild(fragment);
 
     if (container) {
       container.scrollTop = prevScroll;
@@ -758,12 +782,18 @@ class DashboardApp {
   updateEventLog(events, forceRender = false) {
     if (!Array.isArray(events)) return;
     this.eventsCache = events;
+    // Cap log at 200 entries to prevent memory and DOM bloating
+    if (this.eventsCache.length > 200) {
+      this.eventsCache.length = 200;
+    }
+
     const logContainer = document.getElementById('terminalLog');
+    if (!logContainer) return;
     const autoScroll = document.getElementById('chkAutoScroll')?.checked;
 
-    // Deduplicate consecutive identical events on the client side as well
+    // Deduplicate consecutive identical events on client side
     const deduped = [];
-    for (const e of events) {
+    for (const e of this.eventsCache) {
       if (deduped.length > 0) {
         const prev = deduped[deduped.length - 1];
         if (prev.badge === e.badge && prev.text === e.text) {
@@ -772,6 +802,7 @@ class DashboardApp {
         }
       }
       deduped.push({ ...e, count: e.count || 1 });
+      if (deduped.length >= 200) break;
     }
 
     if (!forceRender && deduped.length === this.lastEventCount && deduped[0]?.count === this.lastFirstEventCount) return;
@@ -795,15 +826,60 @@ class DashboardApp {
       return;
     }
 
-    logContainer.innerHTML = filtered.map(e => `
-      <div class="log-entry">
-        <span class="log-time">[${e.timestamp}]</span>
-        <span class="log-badge badge-${e.badge}">
-          ${e.badge}${e.count > 1 ? `<span class="badge-count">x${e.count}</span>` : ''}
-        </span>
-        <span class="log-text">${this.escapeHtml(e.text)}</span>
-      </div>
-    `).join('');
+    // Keyed DOM diff for live event terminal (reuse existing .log-entry nodes)
+    const existingEntries = new Map();
+    for (const el of Array.from(logContainer.querySelectorAll('.log-entry[data-log-key]'))) {
+      existingEntries.set(el.dataset.logKey, el);
+    }
+
+    const fragment = document.createDocumentFragment();
+    const activeKeys = new Set();
+
+    for (const e of filtered) {
+      const key = `${e.timestamp}_${e.badge}_${e.text}`;
+      activeKeys.add(key);
+
+      let el = existingEntries.get(key);
+      if (!el) {
+        el = document.createElement('div');
+        el.className = 'log-entry';
+        el.dataset.logKey = key;
+        el.innerHTML = `
+          <span class="log-time">[${e.timestamp}]</span>
+          <span class="log-badge badge-${e.badge}">
+            ${e.badge}${e.count > 1 ? `<span class="badge-count">x${e.count}</span>` : ''}
+          </span>
+          <span class="log-text">${this.escapeHtml(e.text)}</span>
+        `;
+      } else {
+        const badgeEl = el.querySelector('.log-badge');
+        if (badgeEl) {
+          const countSpan = badgeEl.querySelector('.badge-count');
+          if (e.count > 1) {
+            if (countSpan) {
+              if (countSpan.textContent !== `x${e.count}`) countSpan.textContent = `x${e.count}`;
+            } else {
+              const span = document.createElement('span');
+              span.className = 'badge-count';
+              span.textContent = `x${e.count}`;
+              badgeEl.appendChild(span);
+            }
+          } else if (countSpan) {
+            countSpan.remove();
+          }
+        }
+      }
+      fragment.appendChild(el);
+    }
+
+    // Remove elements that are no longer in the active window
+    for (const child of Array.from(logContainer.children)) {
+      if (!child.dataset?.logKey || !activeKeys.has(child.dataset.logKey)) {
+        logContainer.removeChild(child);
+      }
+    }
+
+    logContainer.appendChild(fragment);
 
     if (autoScroll) {
       logContainer.scrollTop = 0; // Column reverse: 0 is the bottom
