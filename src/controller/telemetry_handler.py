@@ -116,12 +116,31 @@ class TelemetryRegistry:
                 self.links["s1-s2"]["status"] = "DOWN"
         self.log_event("WARN", "LINK_DOWN", f"OpenFlow PortStatus: Switch {dpid} Port {port_no} DOWN (Primary link s1-s2 severed!)")
 
+    def record_link_up(self, dpid, port_no):
+        with self.lock:
+            if dpid in self.switches and port_no in self.switches[dpid]["ports"]:
+                self.switches[dpid]["ports"][port_no]["status"] = "UP"
+            if (dpid == 1 and port_no == 1) or (dpid == 2 and port_no == 1):
+                self.links["s1-s2"]["status"] = "UP"
+        self.log_event("SUCCESS", "LINK_UP", f"OpenFlow PortStatus: Switch {dpid} Port {port_no} UP (Primary link s1-s2 restored!)")
+
     def record_failover_activated(self):
         with self.lock:
             self.failover_active = True
             self.links["s2-s3"]["status"] = "ACTIVE"
             self.links["s2-s3"]["active"] = True
         self.log_event("SUCCESS", "FAILOVER", "Dynamic Failover activated! Priority-20 backup corridor installed on s2 (Port 4) and s3 (Port 5).")
+
+    def record_failover_deactivated(self):
+        with self.lock:
+            self.failover_active = False
+            self.links["s2-s3"]["status"] = "STANDBY"
+            self.links["s2-s3"]["active"] = False
+            # Remove failover flows from registry
+            for d in (2, 3):
+                self.flows[d] = [f for f in self.flows[d] if f["type"] != "DYNAMIC_FAILOVER"]
+                self.switches[d]["flow_count"] = len(self.flows[d])
+        self.log_event("INFO", "FAILOVER_OFF", "Primary link restored. Dynamic failover corridor returned to standby.")
 
     def record_server_overload(self, server_ip, active_connections):
         with self.lock:
@@ -133,6 +152,35 @@ class TelemetryRegistry:
                 self.servers["10.0.0.12"]["status"] = "ACTIVE_TARGET"
         self.log_event("DANGER", "OVERLOAD", f"Northbound REST Alert: Server {server_ip} reports OVERLOAD ({active_connections} active connections)!")
         self.log_event("SUCCESS", "NAT_REROUTE", "Priority-20 Flow Mod: Redirecting all subsequent 10.0.0.11 requests to replica 10.0.0.12 via switch s1.")
+
+    def reset_state(self):
+        with self.lock:
+            self.failover_active = False
+            self.nat_redirect_active = False
+
+            # Reset links to healthy
+            self.links["s1-s2"]["status"] = "UP"
+            self.links["s1-s3"]["status"] = "UP"
+            self.links["s2-s3"]["status"] = "STANDBY"
+            self.links["s2-s3"]["active"] = False
+
+            # Reset switch ports
+            for s in self.switches.values():
+                for p in s["ports"].values():
+                    p["status"] = "UP"
+
+            # Reset server status
+            self.servers["10.0.0.11"]["status"] = "HEALTHY"
+            self.servers["10.0.0.11"]["active_conns"] = 0
+            self.servers["10.0.0.12"]["status"] = "STANDBY"
+            self.servers["10.0.0.12"]["active_conns"] = 0
+
+            # Remove all dynamic Priority-20 flows (keep Priority 0, 5, 10)
+            for d in self.flows:
+                self.flows[d] = [f for f in self.flows[d] if f["priority"] != 20]
+                self.switches[d]["flow_count"] = len(self.flows[d])
+
+        self.log_event("SUCCESS", "RESET", "System telemetry and switch flows reset to healthy baseline.")
 
     def get_telemetry_snapshot(self):
         with self.lock:
@@ -206,7 +254,14 @@ class DashboardHttpHandler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         # Route API endpoints
-        if self.path == '/api/telemetry':
+        if self.path in ('/api/reset', '/api/reset/'):
+            try:
+                self.server.router_app.reset_system()
+                self.send_json({"status": "reset_success", "message": "System state restored to healthy baseline."})
+            except Exception as e:
+                self.send_json({"status": "error", "message": str(e)})
+            return
+        elif self.path == '/api/telemetry':
             self.send_json(self.server.router_app.registry.get_telemetry_snapshot())
             return
         elif self.path == '/api/flows':
@@ -257,7 +312,20 @@ class DashboardHttpHandler(http.server.BaseHTTPRequestHandler):
         self.send_error(404, f"File not found: {self.path}")
 
     def do_POST(self):
-        if self.path == '/api/overload':
+        if self.path in ('/api/reset', '/api/reset/'):
+            try:
+                self.server.router_app.reset_system()
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'reset_success', 'message': 'System state restored to healthy baseline.'}).encode('utf-8'))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+        elif self.path == '/api/overload':
             try:
                 content_len = int(self.headers.get('Content-Length', 0))
                 post_body = self.rfile.read(content_len).decode('utf-8')

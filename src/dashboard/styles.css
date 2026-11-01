@@ -279,6 +279,18 @@ body {
   color: #fff;
 }
 
+.btn-warning {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+}
+.btn-warning:hover {
+  background: rgba(245, 158, 11, 0.25);
+  color: #fff;
+  border-color: #fbbf24;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.3);
+}
+
 /* Canvas Topology Container */
 .canvas-wrapper {
   position: relative;

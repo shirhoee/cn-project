@@ -24,6 +24,9 @@ class MockController:
     def trigger_overload_redirection(self, server_ip, active_connections):
         self.registry.record_server_overload(server_ip, active_connections)
 
+    def reset_system(self):
+        self.registry.reset_state()
+
 
 class TestDashboardAndApi(unittest.TestCase):
     @classmethod
@@ -108,6 +111,25 @@ class TestDashboardAndApi(unittest.TestCase):
         snap = self.registry.get_telemetry_snapshot()
         self.assertTrue(snap["controller"]["nat_redirect_active"])
         self.assertEqual(snap["servers"]["10.0.0.11"]["status"], "OVERLOAD")
+
+    def test_reset_api(self):
+        # Trigger overload first
+        self.registry.record_server_overload("10.0.0.11", 5)
+        self.assertTrue(self.registry.get_telemetry_snapshot()["controller"]["nat_redirect_active"])
+
+        # Send reset POST
+        url = f"http://127.0.0.1:{self.port}/api/reset"
+        req = urllib.request.Request(url, data=b"{}", headers={'Content-Type': 'application/json'}, method="POST")
+        with urllib.request.urlopen(req) as resp:
+            self.assertEqual(resp.status, 200)
+            data = json.loads(resp.read().decode('utf-8'))
+            self.assertEqual(data.get("status"), "reset_success")
+
+        # Verify state is back to healthy
+        snap = self.registry.get_telemetry_snapshot()
+        self.assertFalse(snap["controller"]["nat_redirect_active"])
+        self.assertEqual(snap["servers"]["10.0.0.11"]["status"], "HEALTHY")
+        self.assertEqual(snap["links"]["s1-s2"]["status"], "UP")
 
 
 if __name__ == "__main__":

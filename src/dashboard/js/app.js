@@ -51,11 +51,27 @@ class DashboardApp {
       this.lastEventCount = 0;
     });
 
-    // Reset view
-    document.getElementById('btnResetView').addEventListener('click', () => {
-      this.topoCanvas.particles = [];
-      this.fetchTelemetry();
-    });
+    // Reset System to Baseline Healthy
+    const resetBtn = document.getElementById('btnResetSystem') || document.getElementById('btnResetView');
+    if (resetBtn) {
+      resetBtn.addEventListener('click', async () => {
+        try {
+          resetBtn.disabled = true;
+          const origText = resetBtn.textContent;
+          resetBtn.textContent = 'Resetting...';
+          await fetch('/api/reset', { method: 'POST' });
+          this.topoCanvas.particles = [];
+          await this.fetchTelemetry();
+          setTimeout(() => {
+            resetBtn.disabled = false;
+            resetBtn.textContent = origText;
+          }, 400);
+        } catch (e) {
+          console.error('Reset failed:', e);
+          resetBtn.disabled = false;
+        }
+      });
+    }
 
     // Simulation: Trigger Overload
     document.getElementById('btnTriggerOverloadSim').addEventListener('click', async () => {

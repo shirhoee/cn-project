@@ -178,6 +178,33 @@ class DynamicRouter13(app_manager.OSKenApp):
                                     match=match, instructions=inst)
         datapath.send_msg(mod)
 
+    def delete_flows_by_priority(self, datapath, priority):
+        """Delete all flows of a specific priority from a switch datapath."""
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+        mod = parser.OFPFlowMod(
+            datapath=datapath,
+            command=ofproto.OFPFC_DELETE,
+            out_port=ofproto.OFPP_ANY,
+            out_group=ofproto.OFPG_ANY,
+            priority=priority,
+            match=parser.OFPMatch()
+        )
+        datapath.send_msg(mod)
+
+    def reset_system(self):
+        """Restore network controller and all switches to healthy baseline state."""
+        self.logger.info("*** SYSTEM RESET: Reverting all dynamic reroutes and restoring baseline ***")
+        self.failover_active = False
+        self.registry.reset_state()
+
+        # Delete all dynamic Priority-20 flows on switches s1, s2, s3
+        for dpid, dp in self.datapaths.items():
+            self.delete_flows_by_priority(dp, 20)
+            self.logger.info(f"Cleared dynamic Priority-20 flows on switch s{dpid}")
+
+        self.logger.info("System reset complete. Switches restored to baseline Priority-10 routing.")
+
     @set_ev_cls(ofp_event.EventOFPPortStatus, MAIN_DISPATCHER)
     def port_status_handler(self, ev):
         msg = ev.msg
@@ -186,41 +213,60 @@ class DynamicRouter13(app_manager.OSKenApp):
         parser = dp.ofproto_parser
         port_no = msg.desc.port_no
 
-        # Check if port is down (link failure)
-        if msg.reason == ofproto.OFPPR_MODIFY and (msg.desc.state & ofproto.OFPPS_LINK_DOWN):
-            self.logger.warning(f"*** LINK DOWN DETECTED: Switch {dp.id}, Port {port_no} ***")
-            self.registry.record_link_down(dp.id, port_no)
+        # Check if port status modified
+        if msg.reason == ofproto.OFPPR_MODIFY:
+            if msg.desc.state & ofproto.OFPPS_LINK_DOWN:
+                self.logger.warning(f"*** LINK DOWN DETECTED: Switch {dp.id}, Port {port_no} ***")
+                self.registry.record_link_down(dp.id, port_no)
 
-            # Scenario 1: Link Failure Recovery
-            # If the link between s1 and s2 goes down (s1 port 1, or s2 port 1)
-            if (dp.id == 1 and port_no == 1) or (dp.id == 2 and port_no == 1):
-                self.logger.info("Executing Failover: Rerouting traffic over backup link (s2-s3)!")
-                self.failover_active = True
-                self.registry.record_failover_activated()
+                # Scenario 1: Link Failure Recovery
+                # If the link between s1 and s2 goes down (s1 port 1, or s2 port 1)
+                if (dp.id == 1 and port_no == 1) or (dp.id == 2 and port_no == 1):
+                    self.logger.info("Executing Failover: Rerouting traffic over backup link (s2-s3)!")
+                    self.failover_active = True
+                    self.registry.record_failover_activated()
 
-                # Reroute on s2: Send client traffic out of port 4 (backup link to s3)
-                dp2 = self.datapaths.get(2)
-                if dp2:
-                    p2 = dp2.ofproto_parser
-                    for mac, client_name in [("00:00:00:00:00:15", "client1"), ("00:00:00:00:00:16", "client2"), ("00:00:00:00:00:17", "client3")]:
-                        self.add_flow(dp2, 20, p2.OFPMatch(eth_dst=mac), [p2.OFPActionOutput(4)])
-                        self.registry.record_flow(
-                            dpid=2, priority=20, flow_type="DYNAMIC_FAILOVER",
-                            match_str=f"eth_dst={mac}", actions_str="OUTPUT(4)",
-                            desc=f"Failover: Route {client_name} via backup link s2-s3 (Port 4)"
-                        )
+                    # Reroute on s2: Send client traffic out of port 4 (backup link to s3)
+                    dp2 = self.datapaths.get(2)
+                    if dp2:
+                        p2 = dp2.ofproto_parser
+                        for mac, client_name in [("00:00:00:00:00:15", "client1"), ("00:00:00:00:00:16", "client2"), ("00:00:00:00:00:17", "client3")]:
+                            self.add_flow(dp2, 20, p2.OFPMatch(eth_dst=mac), [p2.OFPActionOutput(4)])
+                            self.registry.record_flow(
+                                dpid=2, priority=20, flow_type="DYNAMIC_FAILOVER",
+                                match_str=f"eth_dst={mac}", actions_str="OUTPUT(4)",
+                                desc=f"Failover: Route {client_name} via backup link s2-s3 (Port 4)"
+                            )
 
-                # Reroute on s3: Send server traffic out of port 5 (backup link to s2)
-                dp3 = self.datapaths.get(3)
-                if dp3:
-                    p3 = dp3.ofproto_parser
-                    for mac, server_name in [("00:00:00:00:00:0b", "server1"), ("00:00:00:00:00:0c", "server2")]:
-                        self.add_flow(dp3, 20, p3.OFPMatch(eth_dst=mac), [p3.OFPActionOutput(5)])
-                        self.registry.record_flow(
-                            dpid=3, priority=20, flow_type="DYNAMIC_FAILOVER",
-                            match_str=f"eth_dst={mac}", actions_str="OUTPUT(5)",
-                            desc=f"Failover: Route {server_name} via backup link s3-s2 (Port 5)"
-                        )
+                    # Reroute on s3: Send server traffic out of port 5 (backup link to s2)
+                    dp3 = self.datapaths.get(3)
+                    if dp3:
+                        p3 = dp3.ofproto_parser
+                        for mac, server_name in [("00:00:00:00:00:0b", "server1"), ("00:00:00:00:00:0c", "server2")]:
+                            self.add_flow(dp3, 20, p3.OFPMatch(eth_dst=mac), [p3.OFPActionOutput(5)])
+                            self.registry.record_flow(
+                                dpid=3, priority=20, flow_type="DYNAMIC_FAILOVER",
+                                match_str=f"eth_dst={mac}", actions_str="OUTPUT(5)",
+                                desc=f"Failover: Route {server_name} via backup link s3-s2 (Port 5)"
+                            )
+            else:
+                # Port came back UP
+                self.logger.info(f"*** LINK UP DETECTED: Switch {dp.id}, Port {port_no} ***")
+                self.registry.record_link_up(dp.id, port_no)
+
+                # If primary link between s1 and s2 came back UP
+                if (dp.id == 1 and port_no == 1) or (dp.id == 2 and port_no == 1):
+                    self.logger.info("Primary link s1-s2 restored! Deactivating dynamic failover.")
+                    self.failover_active = False
+                    self.registry.record_failover_deactivated()
+
+                    # Revert flows on s2 and s3 by deleting Priority-20 failover flows
+                    dp2 = self.datapaths.get(2)
+                    if dp2:
+                        self.delete_flows_by_priority(dp2, 20)
+                    dp3 = self.datapaths.get(3)
+                    if dp3:
+                        self.delete_flows_by_priority(dp3, 20)
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
