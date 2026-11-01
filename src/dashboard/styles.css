@@ -15,9 +15,9 @@
   --apple-glass-thick: rgba(34, 34, 38, 0.90);
   --apple-glass-popover: rgba(24, 24, 28, 0.96);
 
-  --apple-blur-thin: blur(20px) saturate(190%);
-  --apple-blur-regular: blur(32px) saturate(190%);
-  --apple-blur-thick: blur(48px) saturate(200%);
+  --apple-blur-thin: blur(20px) saturate(180%);
+  --apple-blur-regular: blur(20px) saturate(180%);
+  --apple-blur-thick: blur(20px) saturate(180%);
 
   /* 2. Specular Edges, Chamfers & Ambient Occlusion */
   --apple-border-subtle: rgba(255, 255, 255, 0.08);
@@ -414,16 +414,28 @@ body::before {
 
 .card {
   background: var(--apple-glass-regular);
-  backdrop-filter: var(--apple-blur-regular);
-  -webkit-backdrop-filter: var(--apple-blur-regular);
   border-radius: var(--apple-radius-card);
   box-shadow: var(--apple-shadow-card);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   min-width: 0;
+  contain: layout paint;
   transition: transform 0.25s var(--apple-spring), box-shadow 0.25s var(--apple-spring);
   animation: card-appear 0.45s var(--apple-ease-out) both;
+}
+
+/* Limit backdrop-filter to max 3 persistent panels on screen (Navbar, Canvas Card, Metrics Card) */
+.canvas-card,
+.metrics-card {
+  backdrop-filter: var(--apple-blur-thin);
+  -webkit-backdrop-filter: var(--apple-blur-thin);
+}
+
+.flows-card,
+.comparison-card,
+.events-card {
+  background: rgba(22, 22, 26, 0.88);
 }
 
 .card:hover {
@@ -1314,8 +1326,8 @@ kbd {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.78);
-  backdrop-filter: blur(28px) saturate(180%);
-  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  backdrop-filter: var(--apple-blur-thin);
+  -webkit-backdrop-filter: var(--apple-blur-thin);
   display: flex;
   align-items: center;
   justify-content: center;
