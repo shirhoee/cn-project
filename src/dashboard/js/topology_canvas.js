@@ -9,6 +9,12 @@ class TopologyCanvas {
     if (!this.canvas) return;
     this.container = this.canvas.parentElement;
     this.ctx = this.canvas.getContext('2d');
+
+    // Static canvas layer (links, nodes, badges, labels - drawn only on change/resize)
+    this.staticCanvas = document.getElementById('topoStaticCanvas');
+    this.staticCtx = this.staticCanvas ? this.staticCanvas.getContext('2d') : null;
+    this.cachedGradients = {};
+
     this.animationRunning = true;
     this.particles = [];
     this.pulseAngle = 0;
@@ -119,8 +125,55 @@ class TopologyCanvas {
     this.canvas.height = Math.round(h * dpr);
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
+    if (this.staticCanvas) {
+      this.staticCanvas.width = Math.round(w * dpr);
+      this.staticCanvas.height = Math.round(h * dpr);
+      if (this.staticCtx) {
+        this.staticCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+    }
+
     this.updateNodePositions();
+    this.cacheGradients();
+    this.renderStatic();
     this.render();
+  }
+
+  cacheGradients() {
+    const ctx = this.staticCtx || this.ctx;
+    if (!ctx) return;
+    this.cachedGradients = {};
+
+    // Cached radial beacon centered behind core switch s1
+    const s1 = this.nodes.s1;
+    if (s1) {
+      const grad = ctx.createRadialGradient(s1.x, s1.y, 10, s1.x, s1.y, 240);
+      grad.addColorStop(0, 'rgba(10, 132, 255, 0.09)');
+      grad.addColorStop(0.5, 'rgba(10, 132, 255, 0.02)');
+      grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      this.cachedGradients.bg = grad;
+    }
+
+    // Cached node metallic gradients
+    for (const key in this.nodes) {
+      const n = this.nodes[key];
+      if (n.type === 'switch') {
+        const grad = ctx.createRadialGradient(n.x, n.y - 8, 2, n.x, n.y, n.radius * 1.5);
+        grad.addColorStop(0, '#2c2c2e');
+        grad.addColorStop(1, '#151518');
+        this.cachedGradients[key] = grad;
+      } else if (n.type === 'server') {
+        const grad = ctx.createRadialGradient(n.x, n.y - 6, 2, n.x, n.y, n.radius * 1.4);
+        grad.addColorStop(0, '#2c2c2e');
+        grad.addColorStop(1, '#151518');
+        this.cachedGradients[key] = grad;
+      } else if (n.type === 'client') {
+        const grad = ctx.createRadialGradient(n.x, n.y - 5, 2, n.x, n.y, n.radius * 1.4);
+        grad.addColorStop(0, '#2c2c2e');
+        grad.addColorStop(1, '#151518');
+        this.cachedGradients[key] = grad;
+      }
+    }
   }
 
   resize() {
@@ -221,15 +274,11 @@ class TopologyCanvas {
       if (this.nodes.s2) this.triggerRipple(this.nodes.s2.x, this.nodes.s2.y, '#ff453a');
     }
 
-    // Check if flow rules increased
-    for (const dpid in this.state.flowTotals) {
-      const cur = this.state.flowTotals[dpid] || 0;
-      const last = this.lastFlowTotals[dpid] || 0;
-      if (cur > last && last > 0) {
-        const sw = this.nodes[`s${dpid}`];
-        if (sw) this.triggerRipple(sw.x, sw.y, cur > 5 ? '#ff9f0a' : '#0a84ff');
-      }
-      this.lastFlowTotals[dpid] = cur;
+    // Re-render static layer if topological / corridor state shifted
+    if (prevFailover !== this.state.failoverActive ||
+        prevOverload !== (this.state.natRedirectActive || this.state.server1Overload) ||
+        prevLinkDown !== this.state.linkS1S2Down) {
+      this.renderStatic();
     }
   }
 
@@ -247,7 +296,11 @@ class TopologyCanvas {
 
     // Smooth link transition lerp (0 = UP, 1 = DOWN)
     const targetLink = (this.state.linkS1S2Down || this.state.failoverActive) ? 1.0 : 0.0;
-    this.linkTransitionS1S2 += (targetLink - this.linkTransitionS1S2) * 0.12;
+    const linkDiff = Math.abs(targetLink - this.linkTransitionS1S2);
+    if (linkDiff > 0.005) {
+      this.linkTransitionS1S2 += (targetLink - this.linkTransitionS1S2) * 0.12;
+      this.renderStatic();
+    }
 
     // Spawn animated packet particles every 380ms
     if (this.animationRunning && (!this._lastSpawn || now - this._lastSpawn > 380)) {
@@ -307,45 +360,72 @@ class TopologyCanvas {
     }
   }
 
+  renderStatic() {
+    const sctx = this.staticCtx;
+    if (!sctx) return;
+    sctx.clearRect(0, 0, this.width, this.height);
+
+    // 1. OLED Grounding & Radiant Beacon (cached gradient)
+    this.drawBackground(sctx);
+
+    // 2. Conduits & Frosted Port Badges
+    this.drawLinks(sctx);
+
+    // 3. Milled Squircle Nodes & IP Badges (cached gradients)
+    this.drawNodes(sctx);
+  }
+
   render() {
     const ctx = this.ctx;
     ctx.clearRect(0, 0, this.width, this.height);
 
-    // 1. OLED Grounding & Radiant Beacon
-    this.drawBackground(ctx);
+    // 1. Active Failover Corridor Photon Sweep
+    if (this.state.failoverActive || this.state.linkS1S2Down) {
+      this.drawFailoverPulse(ctx);
+    }
 
-    // 2. Conduits & Frosted Port Badges
-    this.drawLinks(ctx);
-
-    // 2.5 Active Path Hop Trace
-    this.drawPathTrace(ctx);
+    // 2. Active Path Hop Trace
+    if (this.traceSource && this.traceTarget) {
+      this.drawPathTrace(ctx);
+    }
 
     // 3. Photonic Comet Particles
     if (this.animationRunning) {
       this.drawParticles(ctx);
     }
 
-    // 4. Milled Squircle Nodes & IP Badges
-    this.drawNodes(ctx);
+    // 4. Active Radiant Rings
+    if (this.ripples.length > 0) {
+      this.drawRipples(ctx);
+    }
 
-    // 5. Active Radiant Rings
-    this.drawRipples(ctx);
-
-    // 6. macOS Quick Look Tooltip
+    // 5. Hover Highlight Halo & macOS Quick Look Tooltip
     if (this.state.hoveredNode) {
-      this.drawTooltip(ctx, this.state.hoveredNode);
+      const hn = this.state.hoveredNode;
+      window.glowCache.drawGlow(ctx, hn.x, hn.y, hn.color || '#0a84ff', hn.radius, 14);
+      this.drawTooltip(ctx, hn);
     }
   }
 
+  drawFailoverPulse(ctx) {
+    const s2 = this.nodes.s2;
+    const s3 = this.nodes.s3;
+    if (!s2 || !s3) return;
+    const sweepT = (Math.sin(this.pulseAngle * 1.8) + 1) / 2;
+    const sweepX = s2.x + (s3.x - s2.x) * sweepT;
+    const sweepY = s2.y + (s3.y - s2.y) * sweepT;
+    ctx.save();
+    window.glowCache.drawGlow(ctx, sweepX, sweepY, '#64d2ff', 4.5, 14);
+    ctx.beginPath();
+    ctx.arc(sweepX, sweepY, 4, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.restore();
+  }
+
   drawBackground(ctx) {
-    // Apple radiant beacon centered behind core switch s1
-    const s1 = this.nodes.s1;
-    if (s1) {
-      const grad = ctx.createRadialGradient(s1.x, s1.y, 10, s1.x, s1.y, 240);
-      grad.addColorStop(0, 'rgba(10, 132, 255, 0.09)');
-      grad.addColorStop(0.5, 'rgba(10, 132, 255, 0.02)');
-      grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-      ctx.fillStyle = grad;
+    if (this.cachedGradients.bg) {
+      ctx.fillStyle = this.cachedGradients.bg;
       ctx.fillRect(0, 0, this.width, this.height);
     }
   }
@@ -375,27 +455,10 @@ class TopologyCanvas {
 
     // Link s2-s3 (Backup Corridor: Marching Dashes or Radiant Wave)
     if (this.state.failoverActive || this.state.linkS1S2Down) {
-      const pulseWidth = 3.5 + 1.2 * Math.abs(Math.sin(this.pulseAngle * 1.5));
-      this.drawGlowLine(ctx, s2, s3, '#64d2ff', pulseWidth);
-
-      // Traveling photon pulse along active failover corridor (pre-rendered glow sprite)
-      const sweepT = (Math.sin(this.pulseAngle * 1.8) + 1) / 2;
-      const sweepX = s2.x + (s3.x - s2.x) * sweepT;
-      const sweepY = s2.y + (s3.y - s2.y) * sweepT;
-      ctx.save();
-      window.glowCache.drawGlow(ctx, sweepX, sweepY, '#64d2ff', 4.5, 14);
-      ctx.beginPath();
-      ctx.arc(sweepX, sweepY, 4, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffffff';
-      ctx.fill();
-      ctx.restore();
-
+      this.drawGlowLine(ctx, s2, s3, '#64d2ff', 3.5);
       this.drawLinkBadge(ctx, (s2.x + s3.x) / 2, s2.y - 18, 'FAILOVER ACTIVE', '#64d2ff');
     } else {
-      ctx.save();
-      ctx.lineDashOffset = this.dashOffset;
       this.drawLinkLine(ctx, s2, s3, 'rgba(99, 99, 102, 0.5)', 2, [6, 6]);
-      ctx.restore();
       this.drawLinkBadge(ctx, (s2.x + s3.x) / 2, s2.y - 18, 'STANDBY', '#8e8e93');
     }
     this.drawPortBadgeAlong(ctx, s2, s3, 0.24, 's2:4');
@@ -567,20 +630,12 @@ class TopologyCanvas {
         const x = n.x - size / 2;
         const y = n.y - size / 2;
 
-        // Hover halo via offscreen sprite
-        if (isHovered) {
-          window.glowCache.drawGlow(ctx, n.x, n.y, '#0a84ff', n.radius, 16);
-        }
-
-        // Milled Squircle Switch with metallic gradient
-        const grad = ctx.createRadialGradient(n.x, n.y - 8, 2, n.x, n.y, n.radius * 1.5);
-        grad.addColorStop(0, '#2c2c2e');
-        grad.addColorStop(1, '#151518');
-        ctx.fillStyle = grad;
+        // Milled Squircle Switch with cached metallic gradient
+        ctx.fillStyle = this.cachedGradients[key] || '#151518';
         this.roundRect(ctx, x, y, size, size, 11, true, false);
 
         // Specular inner light edge (Top Chamfer)
-        ctx.strokeStyle = isHovered ? '#0a84ff' : 'rgba(255, 255, 255, 0.16)';
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)';
         ctx.lineWidth = 1;
         this.roundRect(ctx, x + 0.5, y + 0.5, size - 1, size - 1, 10.5, false, true);
 
@@ -608,24 +663,19 @@ class TopologyCanvas {
         const isOverload = n.id === 'server1' && this.state.server1Overload;
         const color = isOverload ? '#ff453a' : n.color;
 
-        // Halo glow via offscreen sprite
+        // Halo glow via offscreen sprite for overload
         if (isOverload) {
           window.glowCache.drawGlow(ctx, n.x, n.y, '#ff453a', n.radius, 16);
-        } else if (isHovered) {
-          window.glowCache.drawGlow(ctx, n.x, n.y, color, n.radius, 12);
         }
 
-        // Concentric circular node
+        // Concentric circular node with cached gradient
         ctx.beginPath();
         ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
-        const grad = ctx.createRadialGradient(n.x, n.y - 6, 2, n.x, n.y, n.radius * 1.4);
-        grad.addColorStop(0, '#2c2c2e');
-        grad.addColorStop(1, '#151518');
-        ctx.fillStyle = grad;
+        ctx.fillStyle = this.cachedGradients[key] || '#151518';
         ctx.fill();
 
-        ctx.strokeStyle = isHovered ? '#ffffff' : color;
-        ctx.lineWidth = isHovered ? 2.8 : 1.8;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.8;
         ctx.stroke();
 
         ctx.fillStyle = color;
@@ -641,20 +691,13 @@ class TopologyCanvas {
         }
 
       } else if (n.type === 'client') {
-        if (isHovered) {
-          window.glowCache.drawGlow(ctx, n.x, n.y, n.color, n.radius, 12);
-        }
-
         ctx.beginPath();
         ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
-        const grad = ctx.createRadialGradient(n.x, n.y - 5, 2, n.x, n.y, n.radius * 1.4);
-        grad.addColorStop(0, '#2c2c2e');
-        grad.addColorStop(1, '#151518');
-        ctx.fillStyle = grad;
+        ctx.fillStyle = this.cachedGradients[key] || '#151518';
         ctx.fill();
 
-        ctx.strokeStyle = isHovered ? '#ffffff' : n.color;
-        ctx.lineWidth = isHovered ? 2.8 : 1.8;
+        ctx.strokeStyle = n.color;
+        ctx.lineWidth = 1.8;
         ctx.stroke();
 
         ctx.fillStyle = n.color;
