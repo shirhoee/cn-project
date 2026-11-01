@@ -174,3 +174,12 @@ cn_project/
   * Built real-time OpenFlow 1.3 flow table tabs and live event stream terminal with automatic JSON polling.
   * Authored automated endpoint test suite (`tests/test_dashboard_api.py`).
 
+* **Phase 7: Presentation-Grade UI Polish & Real-Time Pipeline (Deliverable D2 - Completed)**
+  * **Real-Time Data Pipeline:** Upgraded from plain polling to Server-Sent Events (`GET /api/stream`) with auto-reconnection and connection watchdog overlay.
+  * **Failover Recovery Stopwatch:** Controller accurately records microsecond-precision hardware flow mod duration (< 2.5 ms) displayed in the real-time metrics row.
+  * **Active Connection Gauge:** Radial canvas arc meter visually showing active connections against overload threshold (0 to 3+ conns).
+  * **Static vs. Dynamic Evaluation Chart:** Interactive grouped bar chart pulling from `performance_metrics.csv` to visually present the 100% vs 33% reliability advantage for examiners.
+  * **Click-to-Trace Forwarding Verification:** Interactive canvas tool allowing users to click a client then a server to highlight the active hop-by-hop forwarding path.
+  * **One-Click Simulation Triggers:** Built-in DEMO buttons for instantaneous failover and overload demonstration directly from the web interface.
+  * **Presenter Mode & Keyboard Shortcuts:** High-contrast projector mode and keyboard accelerators (`1`, `2`, `R`, `P`, `S`, `?`) for smooth viva presentation.
+

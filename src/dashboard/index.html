@@ -7,6 +7,12 @@
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
+  <!-- Ambient Depth & Drifting Glow Blobs -->
+  <div class="ambient-blob blob-1"></div>
+  <div class="ambient-blob blob-2"></div>
+  <div class="ambient-blob blob-3"></div>
+  <div class="bg-vignette"></div>
+
   <!-- Top Navigation & Status Ribbon -->
   <header class="navbar">
     <div class="nav-brand">
@@ -45,6 +51,9 @@
           <option value="0">Paused</option>
         </select>
       </div>
+
+      <button id="btnPresenterMode" class="btn btn-xs btn-outline" title="Toggle Presenter Mode (Shortcut: P)">🖥️ Presenter</button>
+      <button id="btnShortcutsHelp" class="btn btn-xs btn-ghost" title="Keyboard Shortcuts (Shortcut: ?)">⌨️ [?]</button>
     </div>
   </header>
 
@@ -60,8 +69,8 @@
         </div>
         <div class="header-actions">
           <button id="btnTogglePackets" class="btn btn-sm btn-outline active">Packet Stream: ON</button>
-          <button id="btnTriggerFailoverSim" class="btn btn-sm btn-outline">Simulate Link Down</button>
-          <button id="btnTriggerOverloadSim" class="btn btn-sm btn-outline">Simulate Overload</button>
+          <button id="btnTriggerFailoverSim" class="btn btn-sm btn-outline" title="Simulate link failure via controller demo endpoint"><span class="badge-demo">DEMO</span> Failover</button>
+          <button id="btnTriggerOverloadSim" class="btn btn-sm btn-outline" title="Simulate server overload via controller demo endpoint"><span class="badge-demo">DEMO</span> Overload</button>
           <button id="btnResetSystem" class="btn btn-sm btn-outline btn-warning" title="Reset dynamic flows, link states, and restore healthy baseline">⚡ Reset to Healthy</button>
         </div>
       </div>
@@ -70,7 +79,7 @@
         <canvas id="topoCanvas" width="920" height="580"></canvas>
       </div>
 
-      <!-- Topology Legend -->
+      <!-- Topology Legend & Trace Hint -->
       <div class="legend-bar">
         <div class="legend-item"><span class="legend-line line-primary"></span> Primary Link</div>
         <div class="legend-item"><span class="legend-line line-standby"></span> Backup (Standby)</div>
@@ -78,6 +87,7 @@
         <div class="legend-item"><span class="legend-line line-severed"></span> Severed Link</div>
         <div class="legend-item"><span class="legend-particle particle-normal"></span> Normal Traffic</div>
         <div class="legend-item"><span class="legend-particle particle-rerouted"></span> NAT Rerouted</div>
+        <div class="legend-item legend-trace-hint">💡 <em>Click a client then server to trace path</em></div>
       </div>
     </section>
 
@@ -95,17 +105,23 @@
           <div class="metric-box">
             <span class="metric-title">RTT Latency</span>
             <div class="metric-value"><strong id="metricLatency">--</strong> <small>ms</small></div>
-            <span class="metric-sub" id="metricLatencyAvg">Avg: -- ms</span>
+            <span class="metric-sub" id="metricLatencyMedian">Median: -- ms</span>
           </div>
           <div class="metric-box">
             <span class="metric-title">Throughput</span>
             <div class="metric-value"><strong id="metricThroughput">--</strong> <small>kbps</small></div>
             <span class="metric-sub" id="metricThroughputPeak">Peak: -- kbps</span>
           </div>
-          <div class="metric-box">
-            <span class="metric-title">Active Connections</span>
-            <div class="metric-value"><strong id="metricConns">0</strong> <small>conns</small></div>
-            <span class="metric-sub">Limit: 2 (Server 1)</span>
+          <div class="metric-box recovery-box">
+            <span class="metric-title">Failover Speed</span>
+            <div class="metric-value"><strong id="metricRecovery">--</strong> <small>ms</small></div>
+            <span class="metric-sub" id="metricRecoverySub">Hardware Flow Mod</span>
+          </div>
+          <div class="metric-box gauge-metric-box">
+            <span class="metric-title">Connections</span>
+            <div class="gauge-wrapper">
+              <canvas id="connGauge" width="90" height="54"></canvas>
+            </div>
           </div>
         </div>
 
@@ -117,7 +133,10 @@
       <!-- Panel 2: OpenFlow Flow Rules Table -->
       <div class="card flows-card">
         <div class="card-header">
-          <h3>Hardware Flow Table</h3>
+          <div class="header-left">
+            <h3>Hardware Flow Table</h3>
+            <span id="flowDiffBadge" class="flow-diff-chip hidden">+0 rules</span>
+          </div>
           <div class="switch-tabs" id="switchTabs">
             <button class="tab-btn active" data-dpid="1">Core (s1)</button>
             <button class="tab-btn" data-dpid="2">Server (s2)</button>
@@ -145,7 +164,21 @@
         </div>
       </div>
 
-      <!-- Panel 3: Live Event Stream Terminal -->
+      <!-- Panel 3: Static Baseline vs. Dynamic SDN Evaluation -->
+      <div class="card comparison-card">
+        <div class="card-header">
+          <div class="header-left">
+            <h3>Static Baseline vs. Dynamic SDN</h3>
+            <span class="badge badge-info">Rubric D2</span>
+          </div>
+          <button id="btnRefreshComparison" class="btn btn-xs btn-outline">↻ Refresh</button>
+        </div>
+        <div class="comparison-container">
+          <canvas id="comparisonCanvas" width="460" height="135"></canvas>
+        </div>
+      </div>
+
+      <!-- Panel 4: Live Event Stream Terminal -->
       <div class="card events-card">
         <div class="card-header">
           <div class="header-left">
@@ -153,6 +186,7 @@
             <span class="pulse-indicator">● LIVE</span>
           </div>
           <div class="header-actions">
+            <button id="btnExportLog" class="btn btn-xs btn-outline" title="Export events log to JSON">💾 Export</button>
             <button id="btnClearLog" class="btn btn-xs btn-ghost">Clear</button>
             <label class="autoscroll-toggle">
               <input type="checkbox" id="chkAutoScroll" checked> Auto-scroll
@@ -160,7 +194,15 @@
           </div>
         </div>
 
-        <div class="terminal-log" id="terminalLog">
+        <div class="filter-chips" id="logFilterChips">
+          <button class="chip-btn active" data-filter="ALL">All</button>
+          <button class="chip-btn" data-filter="LINK">Link</button>
+          <button class="chip-btn" data-filter="FAILOVER">Failover</button>
+          <button class="chip-btn" data-filter="OVERLOAD">Overload</button>
+          <button class="chip-btn" data-filter="NAT">NAT</button>
+        </div>
+
+        <div class="terminal-log" id="terminalLog" aria-live="polite">
           <!-- Live events injected here -->
         </div>
       </div>
@@ -168,8 +210,38 @@
     </aside>
   </main>
 
+  <!-- Controller Offline Overlay -->
+  <div id="offlineOverlay" class="offline-overlay hidden">
+    <div class="offline-box">
+      <div class="offline-spinner"></div>
+      <h3>Controller Disconnected</h3>
+      <p>Re-establishing connection to OS-Ken OpenFlow 1.3 Controller...</p>
+    </div>
+  </div>
+
+  <!-- Keyboard Shortcuts Modal -->
+  <div id="shortcutsModal" class="shortcuts-modal hidden">
+    <div class="shortcuts-content">
+      <div class="shortcuts-header">
+        <h3>⚡ Keyboard Shortcuts</h3>
+        <button id="btnCloseShortcuts" class="toast-close" aria-label="Close shortcuts modal">&times;</button>
+      </div>
+      <ul class="shortcuts-list">
+        <li><kbd>1</kbd> <span>Simulate Server 1 Overload (DEMO)</span></li>
+        <li><kbd>2</kbd> <span>Simulate Primary Link s1-s2 Down (DEMO)</span></li>
+        <li><kbd>R</kbd> <span>Reset System to Healthy Baseline</span></li>
+        <li><kbd>P</kbd> <span>Toggle Presenter Mode (High-Contrast Projector View)</span></li>
+        <li><kbd>S</kbd> <span>Toggle Animated Packet Flow Stream</span></li>
+        <li><kbd>?</kbd> <span>Open this Keyboard Shortcuts Guide</span></li>
+      </ul>
+    </div>
+  </div>
+
   <!-- Script Modules -->
+  <script src="/dashboard/js/toast.js"></script>
   <script src="/dashboard/js/charts.js"></script>
+  <script src="/dashboard/js/gauge.js"></script>
+  <script src="/dashboard/js/comparison.js"></script>
   <script src="/dashboard/js/topology_canvas.js"></script>
   <script src="/dashboard/js/app.js"></script>
 </body>

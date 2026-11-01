@@ -24,6 +24,11 @@ class MockController:
     def trigger_overload_redirection(self, server_ip, active_connections):
         self.registry.record_server_overload(server_ip, active_connections)
 
+    def simulate_link_down(self):
+        self.registry.record_link_down(1, 1)
+        self.registry.record_failover_activated()
+        self.registry.record_failover_recovery(1.85)
+
     def reset_system(self):
         self.registry.reset_state()
 
@@ -130,6 +135,64 @@ class TestDashboardAndApi(unittest.TestCase):
         self.assertFalse(snap["controller"]["nat_redirect_active"])
         self.assertEqual(snap["servers"]["10.0.0.11"]["status"], "HEALTHY")
         self.assertEqual(snap["links"]["s1-s2"]["status"], "UP")
+
+    def test_api_stream_sse(self):
+        url = f"http://127.0.0.1:{self.port}/api/stream"
+        req = urllib.request.Request(url)
+        resp = urllib.request.urlopen(req, timeout=3.0)
+        self.assertEqual(resp.status, 200)
+        self.assertEqual(resp.headers.get("Content-Type"), "text/event-stream")
+        first_line = resp.readline().decode('utf-8').strip()
+        self.assertTrue(first_line.startswith("event:") or first_line.startswith("data:"))
+        resp.close()
+
+    def test_api_metrics_comparison(self):
+        url = f"http://127.0.0.1:{self.port}/api/metrics/comparison"
+        with urllib.request.urlopen(url) as resp:
+            self.assertEqual(resp.status, 200)
+            self.assertEqual(resp.headers.get_content_type(), "application/json")
+            data = json.loads(resp.read().decode('utf-8'))
+            self.assertIn("static", data)
+            self.assertIn("dynamic", data)
+            self.assertIn("median_latency", data["static"])
+            self.assertIn("median_latency", data["dynamic"])
+            self.assertIn("success_rate", data["static"])
+            self.assertIn("success_rate", data["dynamic"])
+
+    def test_demo_endpoints(self):
+        # 1. Demo overload
+        url_ovl = f"http://127.0.0.1:{self.port}/api/demo/overload"
+        req = urllib.request.Request(url_ovl, data=b"{}", headers={'Content-Type': 'application/json'}, method="POST")
+        with urllib.request.urlopen(req) as resp:
+            self.assertEqual(resp.status, 200)
+            data = json.loads(resp.read().decode('utf-8'))
+            self.assertEqual(data.get("status"), "demo_overload_active")
+
+        snap = self.registry.get_telemetry_snapshot()
+        self.assertTrue(snap["controller"]["nat_redirect_active"])
+
+        # 2. Demo link down
+        url_ld = f"http://127.0.0.1:{self.port}/api/demo/link_down"
+        req = urllib.request.Request(url_ld, data=b"{}", headers={'Content-Type': 'application/json'}, method="POST")
+        with urllib.request.urlopen(req) as resp:
+            self.assertEqual(resp.status, 200)
+            data = json.loads(resp.read().decode('utf-8'))
+            self.assertEqual(data.get("status"), "demo_link_down_active")
+
+        snap = self.registry.get_telemetry_snapshot()
+        self.assertTrue(snap["controller"]["failover_active"])
+
+        # 3. Demo reset
+        url_rst = f"http://127.0.0.1:{self.port}/api/demo/reset"
+        req = urllib.request.Request(url_rst, data=b"{}", headers={'Content-Type': 'application/json'}, method="POST")
+        with urllib.request.urlopen(req) as resp:
+            self.assertEqual(resp.status, 200)
+            data = json.loads(resp.read().decode('utf-8'))
+            self.assertEqual(data.get("status"), "demo_reset_success")
+
+        snap = self.registry.get_telemetry_snapshot()
+        self.assertFalse(snap["controller"]["nat_redirect_active"])
+        self.assertFalse(snap["controller"]["failover_active"])
 
 
 if __name__ == "__main__":

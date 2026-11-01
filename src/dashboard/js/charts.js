@@ -1,23 +1,74 @@
 /**
- * MetricsChart: Lightweight Zero-Dependency HTML5 Canvas Time-Series Graph
- * Plots RTT Latency (ms) and Socket Throughput (kbps) over time.
+ * MetricsChart: High-Performance Presentation-Grade Time-Series Visualizer
+ * Supports DPR crispness, smooth bezier curves, gradient fills, hover crosshair tooltips,
+ * and robust median calculations.
  */
 class MetricsChart {
   constructor(canvasId) {
     this.canvas = document.getElementById(canvasId);
+    this.container = this.canvas.parentElement;
     this.ctx = this.canvas.getContext('2d');
     this.dataPoints = []; // [{latency, throughput, timestamp}]
-    this.maxPoints = 25;
+    this.maxPoints = 28;
+    this.dpr = window.devicePixelRatio || 1;
+    this.width = 480;
+    this.height = 120;
+    this.hoverIndex = -1;
+
+    // Resize observer
+    this.resize();
+    this.resizeObserver = new ResizeObserver(() => this.resize());
+    this.resizeObserver.observe(this.container);
+
+    this.bindHoverEvents();
     this.initDefaultData();
   }
 
+  resize() {
+    const rect = this.container.getBoundingClientRect();
+    this.dpr = window.devicePixelRatio || 1;
+    this.width = rect.width || 480;
+    this.height = rect.height || 120;
+
+    this.canvas.width = Math.round(this.width * this.dpr);
+    this.canvas.height = Math.round(this.height * this.dpr);
+    this.canvas.style.width = `${this.width}px`;
+    this.canvas.style.height = `${this.height}px`;
+
+    this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    this.render();
+  }
+
+  bindHoverEvents() {
+    this.canvas.addEventListener('mousemove', (e) => {
+      const rect = this.canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const padLeft = 45;
+      const padRight = 15;
+      const chartW = this.width - padLeft - padRight;
+
+      if (this.dataPoints.length >= 2 && mouseX >= padLeft && mouseX <= this.width - padRight) {
+        const stepX = chartW / (this.dataPoints.length - 1);
+        const idx = Math.round((mouseX - padLeft) / stepX);
+        this.hoverIndex = Math.max(0, Math.min(this.dataPoints.length - 1, idx));
+      } else {
+        this.hoverIndex = -1;
+      }
+      this.render();
+    });
+
+    this.canvas.addEventListener('mouseleave', () => {
+      this.hoverIndex = -1;
+      this.render();
+    });
+  }
+
   initDefaultData() {
-    // Initial baseline points
     const now = Date.now();
-    for (let i = 10; i >= 0; i--) {
+    for (let i = 12; i >= 0; i--) {
       this.dataPoints.push({
-        latency: 0.6 + Math.random() * 0.4,
-        throughput: 10000 + Math.random() * 1500,
+        latency: parseFloat((0.65 + Math.random() * 0.35).toFixed(2)),
+        throughput: Math.round(10200 + Math.random() * 1200),
         timestamp: new Date(now - i * 1000).toLocaleTimeString()
       });
     }
@@ -26,8 +77,8 @@ class MetricsChart {
 
   addDataPoint(latency, throughput, timestamp) {
     this.dataPoints.push({
-      latency: Math.max(0, latency),
-      throughput: Math.max(0, throughput),
+      latency: Math.max(0, parseFloat(Number(latency).toFixed(2))),
+      throughput: Math.max(0, Math.round(Number(throughput))),
       timestamp: timestamp || new Date().toLocaleTimeString()
     });
 
@@ -40,103 +91,206 @@ class MetricsChart {
   updateFromMetrics(metricsList) {
     if (Array.isArray(metricsList) && metricsList.length > 0) {
       this.dataPoints = metricsList.slice(-this.maxPoints).map(m => ({
-        latency: m.latency_ms || 0,
-        throughput: m.throughput_kbps || 0,
-        timestamp: m.timestamp?.split(' ')[1] || ''
+        latency: parseFloat((m.latency_ms || 0).toFixed(2)),
+        throughput: Math.round(m.throughput_kbps || 0),
+        timestamp: m.timestamp?.split(' ')[1] || new Date().toLocaleTimeString()
       }));
       this.render();
     }
   }
 
+  getMedianLatency() {
+    if (this.dataPoints.length === 0) return 0;
+    const sorted = this.dataPoints.map(d => d.latency).filter(v => v > 0).sort((a, b) => a - b);
+    if (sorted.length === 0) return 0;
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+
   render() {
     const ctx = this.ctx;
-    const w = this.canvas.width;
-    const h = this.canvas.height;
+    const w = this.width;
+    const h = this.height;
     ctx.clearRect(0, 0, w, h);
 
     if (this.dataPoints.length < 2) return;
 
-    const padLeft = 35;
-    const padRight = 10;
-    const padTop = 15;
-    const padBottom = 20;
+    const padLeft = 45;
+    const padRight = 15;
+    const padTop = 18;
+    const padBottom = 22;
 
     const chartW = w - padLeft - padRight;
     const chartH = h - padTop - padBottom;
 
-    // Determine max values for scaling
-    let maxLat = Math.max(...this.dataPoints.map(d => d.latency), 2.0);
-    let maxTput = Math.max(...this.dataPoints.map(d => d.throughput), 12000);
+    // Clean rounded max ceiling for Y-axis (no weird 002.3ms)
+    const rawMax = Math.max(...this.dataPoints.map(d => d.latency), 1.5);
+    const maxLat = Math.max(1.0, Math.ceil(rawMax * 2) / 2);
 
-    // 1. Draw Grid lines
+    // 1. Draw Grid Lines & Rounded Tick Values
     ctx.save();
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
     ctx.lineWidth = 1;
-    ctx.setLineDash([3, 3]);
+    ctx.setLineDash([3, 4]);
 
-    for (let i = 0; i <= 3; i++) {
-      const y = padTop + (chartH / 3) * i;
+    const numTicks = 3;
+    for (let i = 0; i <= numTicks; i++) {
+      const y = padTop + (chartH / numTicks) * i;
       ctx.beginPath();
       ctx.moveTo(padLeft, y);
       ctx.lineTo(w - padRight, y);
       ctx.stroke();
 
-      // Latency scale label (left)
+      // Rounded tick label
       ctx.fillStyle = '#64748b';
-      ctx.font = '8px monospace';
+      ctx.font = '600 9.5px ui-monospace, SFMono-Regular, monospace';
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';
-      const val = (maxLat * (1 - i / 3)).toFixed(1);
-      ctx.fillText(`${val}ms`, padLeft - 4, y);
+      const tickVal = maxLat * (1 - i / numTicks);
+      const formatted = tickVal >= 10 ? tickVal.toFixed(0) : tickVal.toFixed(1);
+      ctx.fillText(`${formatted} ms`, padLeft - 6, y);
     }
     ctx.restore();
 
-    // 2. Draw Latency Line & Area (Cyan)
-    this.drawLineSeries(ctx, this.dataPoints.map(d => d.latency), maxLat, padLeft, padTop, chartW, chartH, '#38bdf8', 'rgba(56, 189, 248, 0.12)');
+    // 2. Compute Coordinate Points
+    const stepX = chartW / (this.dataPoints.length - 1);
+    const points = this.dataPoints.map((d, i) => {
+      const clampedLat = Math.min(d.latency, maxLat);
+      return {
+        x: padLeft + i * stepX,
+        y: padTop + chartH - (clampedLat / maxLat) * chartH,
+        raw: d
+      };
+    });
 
-    // 3. Draw Legend in top right
+    // 3. Draw Smooth Monotone Curve & Gradient Fill
+    this.drawSmoothSeries(ctx, points, padLeft, padTop, chartW, chartH);
+
+    // 4. Header Legend
     ctx.save();
-    ctx.font = '8.5px system-ui';
+    ctx.font = '600 10px system-ui, -apple-system, sans-serif';
     ctx.fillStyle = '#38bdf8';
-    ctx.fillText('● RTT Latency', w - 75, 10);
+    ctx.textAlign = 'right';
+    ctx.fillText('● RTT Latency (ms)', w - padRight, 12);
+    ctx.restore();
+
+    // 5. Draw Hover Crosshair & Tooltip
+    if (this.hoverIndex >= 0 && this.hoverIndex < points.length) {
+      this.drawCrosshair(ctx, points[this.hoverIndex], padTop, chartH);
+    }
+  }
+
+  drawSmoothSeries(ctx, points, padLeft, padTop, chartW, chartH) {
+    if (points.length < 2) return;
+
+    ctx.save();
+
+    // Fill Path with smooth curve
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+
+    for (let i = 0; i < points.length - 1; i++) {
+      const p0 = points[i];
+      const p1 = points[i + 1];
+      const midX = (p0.x + p1.x) / 2;
+      ctx.bezierCurveTo(midX, p0.y, midX, p1.y, p1.x, p1.y);
+    }
+
+    // Connect to bottom for area fill
+    const last = points[points.length - 1];
+    ctx.lineTo(last.x, padTop + chartH);
+    ctx.lineTo(points[0].x, padTop + chartH);
+    ctx.closePath();
+
+    const grad = ctx.createLinearGradient(0, padTop, 0, padTop + chartH);
+    grad.addColorStop(0, 'rgba(56, 189, 248, 0.28)');
+    grad.addColorStop(0.7, 'rgba(56, 189, 248, 0.06)');
+    grad.addColorStop(1, 'rgba(56, 189, 248, 0)');
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Stroke Smooth Curve
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 0; i < points.length - 1; i++) {
+      const p0 = points[i];
+      const p1 = points[i + 1];
+      const midX = (p0.x + p1.x) / 2;
+      ctx.bezierCurveTo(midX, p0.y, midX, p1.y, p1.x, p1.y);
+    }
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 2.2;
+    ctx.shadowColor = '#38bdf8';
+    ctx.shadowBlur = 8;
+    ctx.stroke();
+
+    // End point pulsing dot
+    ctx.beginPath();
+    ctx.arc(last.x, last.y, 3.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = '#38bdf8';
+    ctx.shadowBlur = 10;
+    ctx.fill();
+
     ctx.restore();
   }
 
-  drawLineSeries(ctx, values, maxVal, left, top, width, height, lineColor, fillColor) {
-    if (values.length < 2) return;
-    const stepX = width / (values.length - 1);
-
+  drawCrosshair(ctx, pt, padTop, chartH) {
     ctx.save();
+
+    // Vertical dashed crosshair line
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 3]);
     ctx.beginPath();
-    ctx.moveTo(left, top + height - (values[0] / maxVal) * height);
-
-    for (let i = 1; i < values.length; i++) {
-      const x = left + i * stepX;
-      const y = top + height - (values[i] / maxVal) * height;
-      ctx.lineTo(x, y);
-    }
-
-    // Stroke line
-    ctx.strokeStyle = lineColor;
-    ctx.lineWidth = 2;
+    ctx.moveTo(pt.x, padTop);
+    ctx.lineTo(pt.x, padTop + chartH);
     ctx.stroke();
 
-    // Fill area below
-    ctx.lineTo(left + (values.length - 1) * stepX, top + height);
-    ctx.lineTo(left, top + height);
-    ctx.closePath();
-    ctx.fillStyle = fillColor;
-    ctx.fill();
-
-    // Draw last point dot
-    const lastX = left + (values.length - 1) * stepX;
-    const lastY = top + height - (values[values.length - 1] / maxVal) * height;
+    // Crosshair active dot
     ctx.beginPath();
-    ctx.arc(lastX, lastY, 3, 0, Math.PI * 2);
-    ctx.fillStyle = lineColor;
-    ctx.shadowColor = lineColor;
-    ctx.shadowBlur = 6;
+    ctx.arc(pt.x, pt.y, 4.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#38bdf8';
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
     ctx.fill();
+    ctx.stroke();
+
+    // Tooltip Bubble
+    const label = `${pt.raw.latency.toFixed(2)} ms`;
+    const sub = pt.raw.timestamp || '';
+    ctx.font = '700 11px system-ui, -apple-system, sans-serif';
+    const textW = Math.max(ctx.measureText(label).width, ctx.measureText(sub).width);
+    const boxW = textW + 16;
+    const boxH = 34;
+
+    let bx = pt.x - boxW / 2;
+    if (bx < 45) bx = 45;
+    if (bx + boxW > this.width - 10) bx = this.width - boxW - 10;
+    const by = Math.max(5, pt.y - boxH - 8);
+
+    ctx.fillStyle = 'rgba(11, 19, 38, 0.96)';
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 1;
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
+    ctx.shadowBlur = 8;
+
+    // Draw rounded rect
+    ctx.beginPath();
+    ctx.roundRect(bx, by, boxW, boxH, 5);
+    ctx.fill();
+    ctx.stroke();
+
+    // Tooltip texts
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#38bdf8';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText(label, bx + boxW / 2, by + 4);
+
+    ctx.font = '500 9px ui-monospace, monospace';
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText(sub, bx + boxW / 2, by + 19);
 
     ctx.restore();
   }

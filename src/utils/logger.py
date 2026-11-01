@@ -11,12 +11,12 @@ class PerformanceLogger:
         if not os.path.exists(self.log_file):
             with open(self.log_file, mode='w', newline='') as file:
                 writer = csv.writer(file)
-                writer.writerow(["timestamp", "client_ip", "event_type", "latency_ms", "throughput_kbps", "status"])
+                writer.writerow(["timestamp", "client_ip", "event_type", "latency_ms", "throughput_kbps", "status", "mode"])
 
-    def log_metric(self, client_ip, event_type, latency_ms, throughput_kbps, status):
+    def log_metric(self, client_ip, event_type, latency_ms, throughput_kbps, status, mode="dynamic"):
         with open(self.log_file, mode='a', newline='') as file:
             writer = csv.writer(file)
-            writer.writerow([time.strftime("%Y-%m-%d %H:%M:%S"), client_ip, event_type, round(latency_ms, 2), round(throughput_kbps, 2), status])
+            writer.writerow([time.strftime("%Y-%m-%d %H:%M:%S"), client_ip, event_type, round(latency_ms, 2), round(throughput_kbps, 2), status, mode])
 
 # Singleton instance for easy import
 perf_logger = PerformanceLogger()

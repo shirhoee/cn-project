@@ -13,9 +13,115 @@ class DashboardApp {
     // Initialize visualizer and chart
     this.topoCanvas = new TopologyCanvas('topoCanvas');
     this.metricsChart = new MetricsChart('metricsChart');
+    this.connGauge = new ConnectionGauge('connGauge');
+    this.comparisonChart = new ComparisonChart('comparisonCanvas');
+
+    // Historical tracking for tweens and toasts
+    this.lastFailover = false;
+    this.lastOverload = false;
+    this.lastConns = 0;
+    this.prevLatency = 0;
+    this.prevThroughput = 0;
+    this.eventsCache = [];
+    this.lastDataTimestamp = Date.now();
+    this.reconnectBackoff = 1000;
+    this.activeLogFilter = 'ALL';
+    this.lastFlowCount = {};
 
     this.bindDomEvents();
+    this.initWatchdog();
+    this.initSSE();
     this.startPolling();
+  }
+
+  initWatchdog() {
+    setInterval(() => {
+      const elapsed = Date.now() - this.lastDataTimestamp;
+      if (elapsed > 3800) {
+        this.showOfflineOverlay(true);
+        this.markControllerOffline();
+      } else {
+        this.showOfflineOverlay(false);
+      }
+    }, 1000);
+  }
+
+  markDataReceived() {
+    this.lastDataTimestamp = Date.now();
+    this.showOfflineOverlay(false);
+    this.markControllerOnline();
+  }
+
+  showOfflineOverlay(show) {
+    const el = document.getElementById('offlineOverlay');
+    if (el) {
+      el.classList.toggle('hidden', !show);
+    }
+  }
+
+  markControllerOnline() {
+    const ctrlText = document.getElementById('controllerText');
+    if (ctrlText) ctrlText.textContent = 'ONLINE';
+    const ctrlStatus = document.getElementById('controllerStatus');
+    if (ctrlStatus) {
+      const dot = ctrlStatus.querySelector('.status-dot');
+      if (dot) dot.className = 'status-dot pulse-green';
+    }
+  }
+
+  initSSE() {
+    if (!window.EventSource) {
+      return;
+    }
+    if (this.eventSource) {
+      this.eventSource.close();
+    }
+
+    try {
+      this.eventSource = new EventSource('/api/stream');
+
+      this.eventSource.addEventListener('open', () => {
+        this.markDataReceived();
+        this.reconnectBackoff = 1000;
+      });
+
+      this.eventSource.addEventListener('telemetry', (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          this.markDataReceived();
+          this.updateHeaderStatus(data);
+          this.topoCanvas.updateState(data);
+        } catch (err) {}
+      });
+
+      this.eventSource.addEventListener('flows', (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          this.markDataReceived();
+          this.flowsData = data;
+          this.renderFlowTable();
+        } catch (err) {}
+      });
+
+      this.eventSource.addEventListener('event', (e) => {
+        try {
+          const ev = JSON.parse(e.data);
+          this.markDataReceived();
+          this.eventsCache.unshift(ev);
+          this.updateEventLog(this.eventsCache);
+        } catch (err) {}
+      });
+
+      this.eventSource.onerror = () => {
+        if (this.eventSource) this.eventSource.close();
+        setTimeout(() => {
+          this.reconnectBackoff = Math.min(8000, (this.reconnectBackoff || 1000) * 1.5);
+          this.initSSE();
+        }, this.reconnectBackoff || 1000);
+      };
+    } catch (err) {
+      console.warn('SSE initialization failed, fallback polling active.', err);
+    }
   }
 
   bindDomEvents() {
@@ -59,8 +165,9 @@ class DashboardApp {
           resetBtn.disabled = true;
           const origText = resetBtn.textContent;
           resetBtn.textContent = 'Resetting...';
-          await fetch('/api/reset', { method: 'POST' });
+          await fetch('/api/demo/reset', { method: 'POST' }).catch(() => fetch('/api/reset', { method: 'POST' }));
           this.topoCanvas.particles = [];
+          if (window.toasts) window.toasts.show('System Reset', 'All dynamic flows cleared. Healthy baseline restored.', 'success');
           await this.fetchTelemetry();
           setTimeout(() => {
             resetBtn.disabled = false;
@@ -74,24 +181,130 @@ class DashboardApp {
     }
 
     // Simulation: Trigger Overload
-    document.getElementById('btnTriggerOverloadSim').addEventListener('click', async () => {
-      try {
-        const resp = await fetch('/api/overload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ server_ip: '10.0.0.11', active_connections: 3 })
-        });
-        const data = await resp.json();
-        console.log('Overload simulation triggered:', data);
-        this.fetchTelemetry();
-      } catch (e) {
-        console.error('Failed to trigger overload:', e);
+    const btnOverload = document.getElementById('btnTriggerOverloadSim');
+    if (btnOverload) {
+      btnOverload.addEventListener('click', async () => {
+        try {
+          const resp = await fetch('/api/demo/overload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ server_ip: '10.0.0.11', active_connections: 3 })
+          });
+          const data = await resp.json();
+          if (window.toasts) window.toasts.show('Overload Simulated', 'Injected 3 active connections on server1. NAT redirected.', 'warning');
+          this.fetchTelemetry();
+        } catch (e) {
+          console.error('Failed to trigger overload:', e);
+        }
+      });
+    }
+
+    // Simulation: Simulate Link Down info
+    const btnFailover = document.getElementById('btnTriggerFailoverSim');
+    if (btnFailover) {
+      btnFailover.addEventListener('click', async () => {
+        try {
+          const resp = await fetch('/api/demo/link_down', { method: 'POST' });
+          const data = await resp.json();
+          if (window.toasts) window.toasts.show('Failover Triggered', 'Simulated Link Down on primary corridor s1-s2. Failover route installed.', 'warning');
+          this.fetchTelemetry();
+        } catch (e) {
+          console.error('Failed to simulate link down:', e);
+        }
+      });
+    }
+
+    // Presenter Mode Toggle
+    const btnPresenter = document.getElementById('btnPresenterMode');
+    if (btnPresenter) {
+      btnPresenter.addEventListener('click', () => {
+        document.body.classList.toggle('presenter-mode');
+        const isPres = document.body.classList.contains('presenter-mode');
+        btnPresenter.classList.toggle('active', isPres);
+        if (window.toasts) window.toasts.show('Presenter Mode', isPres ? 'Enabled high-contrast presentation mode.' : 'Disabled presenter mode.', 'info');
+      });
+    }
+
+    // Shortcuts Modal
+    const shortcutsModal = document.getElementById('shortcutsModal');
+    const btnShortcuts = document.getElementById('btnShortcutsHelp');
+    const btnCloseShortcuts = document.getElementById('btnCloseShortcuts');
+    if (btnShortcuts && shortcutsModal) {
+      btnShortcuts.addEventListener('click', () => shortcutsModal.classList.remove('hidden'));
+    }
+    if (btnCloseShortcuts && shortcutsModal) {
+      btnCloseShortcuts.addEventListener('click', () => shortcutsModal.classList.add('hidden'));
+    }
+    if (shortcutsModal) {
+      shortcutsModal.addEventListener('click', (e) => {
+        if (e.target === shortcutsModal) shortcutsModal.classList.add('hidden');
+      });
+    }
+
+    // Keyboard Shortcuts Listener
+    window.addEventListener('keydown', (e) => {
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
+      const key = e.key.toLowerCase();
+      if (key === '1') {
+        document.getElementById('btnTriggerOverloadSim')?.click();
+      } else if (key === '2') {
+        document.getElementById('btnTriggerFailoverSim')?.click();
+      } else if (key === 'r') {
+        document.getElementById('btnResetSystem')?.click();
+      } else if (key === 'p') {
+        document.getElementById('btnPresenterMode')?.click();
+      } else if (key === 's') {
+        document.getElementById('btnTogglePackets')?.click();
+      } else if (key === '?') {
+        const m = document.getElementById('shortcutsModal');
+        if (m) m.classList.toggle('hidden');
+      } else if (e.key === 'Escape') {
+        document.getElementById('shortcutsModal')?.classList.add('hidden');
       }
     });
 
-    // Simulation: Simulate Link Down info
-    document.getElementById('btnTriggerFailoverSim').addEventListener('click', () => {
-      alert("To trigger real Link Failure in Mininet:\nRun in Mininet CLI:\n  mininet> link s1 s2 down\n\nTo restore link:\n  mininet> link s1 s2 up");
+    // Filter Chips for Live Terminal Log
+    const chipBtns = document.querySelectorAll('#logFilterChips .chip-btn');
+    chipBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        chipBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this.activeLogFilter = btn.getAttribute('data-filter') || 'ALL';
+        this.updateEventLog(this.eventsCache, true);
+      });
+    });
+
+    // Export Event Log to JSON
+    const btnExport = document.getElementById('btnExportLog');
+    if (btnExport) {
+      btnExport.addEventListener('click', () => {
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(this.eventsCache, null, 2));
+        const downloadAnchor = document.createElement('a');
+        downloadAnchor.setAttribute("href", dataStr);
+        downloadAnchor.setAttribute("download", `sdn_telemetry_events_${Date.now()}.json`);
+        document.body.appendChild(downloadAnchor);
+        downloadAnchor.click();
+        downloadAnchor.remove();
+        if (window.toasts) window.toasts.show('Export Complete', 'Saved telemetry event log to JSON file.', 'success');
+      });
+    }
+
+    // Refresh Static vs Dynamic Comparison Chart
+    const btnRefreshComp = document.getElementById('btnRefreshComparison');
+    if (btnRefreshComp && this.comparisonChart) {
+      btnRefreshComp.addEventListener('click', () => {
+        this.comparisonChart.loadData();
+        if (window.toasts) window.toasts.show('Comparison Updated', 'Reloaded Static vs Dynamic metrics from performance log.', 'info');
+      });
+    }
+
+    // Tab Visibility Optimization
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        if (this.topoCanvas && this.topoCanvas.stopLoop) this.topoCanvas.stopLoop();
+      } else {
+        if (this.topoCanvas && this.topoCanvas.startLoop) this.topoCanvas.startLoop();
+      }
     });
   }
 
@@ -125,6 +338,7 @@ class DashboardApp {
       ]);
 
       if (telRes) {
+        this.markDataReceived();
         this.updateHeaderStatus(telRes);
         this.topoCanvas.updateState(telRes);
       }
@@ -147,9 +361,34 @@ class DashboardApp {
     }
   }
 
+  tweenNumber(element, startVal, endVal, durationMs = 400, formatFn = (v) => v.toFixed(2)) {
+    if (!element) return;
+    const startTime = performance.now();
+    const diff = endVal - startVal;
+    if (Math.abs(diff) < 0.001) {
+      element.textContent = formatFn(endVal);
+      return;
+    }
+
+    const step = (now) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(1.0, elapsed / durationMs);
+      const ease = 1 - Math.pow(1 - progress, 3);
+      const current = startVal + diff * ease;
+      element.textContent = formatFn(current);
+
+      if (progress < 1.0) {
+        requestAnimationFrame(step);
+      } else {
+        element.textContent = formatFn(endVal);
+      }
+    };
+    requestAnimationFrame(step);
+  }
+
   updateHeaderStatus(data) {
     const ctrlText = document.getElementById('controllerText');
-    ctrlText.textContent = data.controller?.status || 'ONLINE';
+    if (ctrlText) ctrlText.textContent = data.controller?.status || 'ONLINE';
 
     // Failover status
     const failoverPill = document.getElementById('failoverStatus');
@@ -157,14 +396,27 @@ class DashboardApp {
     const failoverText = document.getElementById('failoverText');
     const isFailover = !!data.controller?.failover_active;
 
+    if (isFailover !== this.lastFailover) {
+      if (isFailover) {
+        if (window.toasts) window.toasts.show('Failover Corridor Activated', 'Primary link severed. Priority-20 backup corridor installed on s2-s3.', 'warning');
+        if (failoverPill) {
+          failoverPill.classList.add('pill-pulse-ring');
+          setTimeout(() => failoverPill.classList.remove('pill-pulse-ring'), 700);
+        }
+      } else {
+        if (window.toasts) window.toasts.show('Corridor Normal', 'Primary link s1-s2 restored to service.', 'success');
+      }
+      this.lastFailover = isFailover;
+    }
+
     if (isFailover) {
-      failoverDot.className = 'status-dot dot-cyan';
-      failoverText.textContent = 'FAILOVER ACTIVE';
-      failoverPill.style.borderColor = 'rgba(6, 182, 212, 0.4)';
+      if (failoverDot) failoverDot.className = 'status-dot dot-cyan';
+      if (failoverText) failoverText.textContent = 'FAILOVER ACTIVE';
+      if (failoverPill) failoverPill.style.borderColor = 'rgba(6, 182, 212, 0.5)';
     } else {
-      failoverDot.className = 'status-dot dot-gray';
-      failoverText.textContent = 'NORMAL';
-      failoverPill.style.borderColor = '';
+      if (failoverDot) failoverDot.className = 'status-dot dot-gray';
+      if (failoverText) failoverText.textContent = 'NORMAL';
+      if (failoverPill) failoverPill.style.borderColor = '';
     }
 
     // Server 1 overload status
@@ -174,20 +426,61 @@ class DashboardApp {
     const s1State = data.servers?.['10.0.0.11']?.status;
     const isOverload = s1State === 'OVERLOAD' || data.controller?.nat_redirect_active;
 
-    if (isOverload) {
-      serverDot.className = 'status-dot dot-red';
-      serverText.textContent = 'OVERLOAD';
-      serverPill.style.borderColor = 'rgba(239, 68, 68, 0.4)';
-    } else {
-      serverDot.className = 'status-dot dot-green';
-      serverText.textContent = 'HEALTHY';
-      serverPill.style.borderColor = '';
+    if (isOverload !== this.lastOverload) {
+      if (isOverload) {
+        if (window.toasts) window.toasts.show('Server 1 Overload Detected', 'Connection threshold exceeded! Priority-20 NAT rerouting traffic to replica server2.', 'danger');
+        if (serverPill) {
+          serverPill.classList.add('pill-pulse-ring');
+          setTimeout(() => serverPill.classList.remove('pill-pulse-ring'), 700);
+        }
+      } else {
+        if (window.toasts) window.toasts.show('Servers Healthy', 'All traffic routes to primary server1.', 'success');
+      }
+      this.lastOverload = isOverload;
     }
 
-    // Active connections counter
+    if (isOverload) {
+      if (serverDot) serverDot.className = 'status-dot dot-red';
+      if (serverText) serverText.textContent = 'OVERLOAD';
+      if (serverPill) serverPill.style.borderColor = 'rgba(239, 68, 68, 0.5)';
+    } else {
+      if (serverDot) serverDot.className = 'status-dot dot-green';
+      if (serverText) serverText.textContent = 'HEALTHY';
+      if (serverPill) serverPill.style.borderColor = '';
+    }
+
+    // Active connections counter tween
     const s1Conns = data.servers?.['10.0.0.11']?.active_conns || 0;
     const connsEl = document.getElementById('metricConns');
-    if (connsEl) connsEl.textContent = s1Conns;
+    if (connsEl && s1Conns !== this.lastConns) {
+      this.tweenNumber(connsEl, this.lastConns, s1Conns, 350, v => Math.round(v).toString());
+      this.lastConns = s1Conns;
+    }
+
+    if (this.connGauge) {
+      this.connGauge.setValue(s1Conns);
+    }
+
+    // Failover recovery speed
+    const recEl = document.getElementById('metricRecovery');
+    if (recEl && data.last_recovery_ms !== undefined && data.last_recovery_ms !== null) {
+      const recVal = parseFloat(data.last_recovery_ms);
+      if (recVal > 0) {
+        recEl.textContent = `${recVal.toFixed(2)}`;
+      } else {
+        recEl.textContent = '--';
+      }
+    }
+  }
+
+  markControllerOnline() {
+    const ctrlText = document.getElementById('controllerText');
+    if (ctrlText && ctrlText.textContent === 'OFFLINE') ctrlText.textContent = 'ONLINE';
+    const ctrlStatus = document.getElementById('controllerStatus');
+    if (ctrlStatus) {
+      const dot = ctrlStatus.querySelector('.status-dot');
+      if (dot && dot.classList.contains('dot-red')) dot.className = 'status-dot dot-green';
+    }
   }
 
   markControllerOffline() {
@@ -201,8 +494,33 @@ class DashboardApp {
   }
 
   renderFlowTable() {
+    const container = document.querySelector('.table-container');
+    const prevScroll = container ? container.scrollTop : 0;
     const tbody = document.getElementById('flowTableBody');
     const flows = this.flowsData[this.currentDpid] || [];
+
+    // Track flow rule changes & display diff chip
+    const diffBadge = document.getElementById('flowDiffBadge');
+    if (this.lastFlowCount[this.currentDpid] !== undefined && this.lastFlowCount[this.currentDpid] !== flows.length) {
+      const diff = flows.length - this.lastFlowCount[this.currentDpid];
+      if (diff !== 0 && diffBadge) {
+        diffBadge.textContent = diff > 0 ? `+${diff} rules` : `${diff} rules`;
+        diffBadge.className = `flow-diff-chip ${diff > 0 ? 'diff-added' : 'diff-removed'}`;
+        diffBadge.classList.remove('hidden');
+        clearTimeout(this._flowDiffTimer);
+        this._flowDiffTimer = setTimeout(() => {
+          diffBadge.classList.add('hidden');
+        }, 3500);
+      }
+    }
+    this.lastFlowCount[this.currentDpid] = flows.length;
+
+    const flowKey = flows.map(f => `${f.priority}_${f.match}_${f.actions}`).join('|');
+    this._lastFlowKeys = this._lastFlowKeys || {};
+    if (this._lastFlowKeys[this.currentDpid] === flowKey) {
+      return; // Skip re-rendering if unchanged
+    }
+    this._lastFlowKeys[this.currentDpid] = flowKey;
 
     if (flows.length === 0) {
       tbody.innerHTML = `<tr><td colspan="5" class="empty-state">No active flow rules recorded for Switch ${this.currentDpid} yet.</td></tr>`;
@@ -211,13 +529,21 @@ class DashboardApp {
 
     tbody.innerHTML = flows.map(f => {
       let badgeClass = 'flow-static';
-      if (f.type === 'DYNAMIC_NAT') badgeClass = 'flow-nat';
-      else if (f.type === 'DYNAMIC_FAILOVER') badgeClass = 'flow-failover';
-      else if (f.type === 'LOOP_GUARD') badgeClass = 'flow-guard';
-      else if (f.type === 'TABLE_MISS') badgeClass = 'flow-miss';
+      let rowHighlight = '';
+      if (f.type === 'DYNAMIC_NAT') {
+        badgeClass = 'flow-nat';
+        rowHighlight = 'style="background: rgba(245, 158, 11, 0.08);"';
+      } else if (f.type === 'DYNAMIC_FAILOVER') {
+        badgeClass = 'flow-failover';
+        rowHighlight = 'style="background: rgba(6, 182, 212, 0.08);"';
+      } else if (f.type === 'LOOP_GUARD') {
+        badgeClass = 'flow-guard';
+      } else if (f.type === 'TABLE_MISS') {
+        badgeClass = 'flow-miss';
+      }
 
       return `
-        <tr>
+        <tr ${rowHighlight}>
           <td><strong>${f.priority}</strong></td>
           <td><span class="flow-badge ${badgeClass}">${f.type}</span></td>
           <td><code>${this.escapeHtml(f.match)}</code></td>
@@ -226,21 +552,58 @@ class DashboardApp {
         </tr>
       `;
     }).join('');
+
+    if (container) {
+      container.scrollTop = prevScroll;
+    }
   }
 
-  updateEventLog(events) {
+  updateEventLog(events, forceRender = false) {
     if (!Array.isArray(events)) return;
+    this.eventsCache = events;
     const logContainer = document.getElementById('terminalLog');
-    const autoScroll = document.getElementById('chkAutoScroll').checked;
+    const autoScroll = document.getElementById('chkAutoScroll')?.checked;
 
-    // Only re-render if count or latest changed
-    if (events.length === this.lastEventCount) return;
-    this.lastEventCount = events.length;
+    // Deduplicate consecutive identical events on the client side as well
+    const deduped = [];
+    for (const e of events) {
+      if (deduped.length > 0) {
+        const prev = deduped[deduped.length - 1];
+        if (prev.badge === e.badge && prev.text === e.text) {
+          prev.count = (prev.count || 1) + (e.count || 1);
+          continue;
+        }
+      }
+      deduped.push({ ...e, count: e.count || 1 });
+    }
 
-    logContainer.innerHTML = events.map(e => `
+    if (!forceRender && deduped.length === this.lastEventCount && deduped[0]?.count === this.lastFirstEventCount) return;
+    this.lastEventCount = deduped.length;
+    this.lastFirstEventCount = deduped[0]?.count;
+
+    let filtered = deduped;
+    if (this.activeLogFilter && this.activeLogFilter !== 'ALL') {
+      filtered = deduped.filter(e => {
+        const b = (e.badge || '').toUpperCase();
+        if (this.activeLogFilter === 'LINK') return b.includes('LINK') || b.includes('PORT');
+        if (this.activeLogFilter === 'FAILOVER') return b.includes('FAILOVER');
+        if (this.activeLogFilter === 'OVERLOAD') return b.includes('OVERLOAD');
+        if (this.activeLogFilter === 'NAT') return b.includes('NAT');
+        return true;
+      });
+    }
+
+    if (filtered.length === 0) {
+      logContainer.innerHTML = `<div class="empty-state" style="padding: 1rem; color: #64748b; font-style: italic;">No events matching filter "${this.activeLogFilter}".</div>`;
+      return;
+    }
+
+    logContainer.innerHTML = filtered.map(e => `
       <div class="log-entry">
         <span class="log-time">[${e.timestamp}]</span>
-        <span class="log-badge badge-${e.badge}">${e.badge}</span>
+        <span class="log-badge badge-${e.badge}">
+          ${e.badge}${e.count > 1 ? `<span class="badge-count">x${e.count}</span>` : ''}
+        </span>
         <span class="log-text">${this.escapeHtml(e.text)}</span>
       </div>
     `).join('');
@@ -255,18 +618,37 @@ class DashboardApp {
     const latest = metricsList[metricsList.length - 1];
 
     const latEl = document.getElementById('metricLatency');
-    const latAvgEl = document.getElementById('metricLatencyAvg');
+    const latMedianEl = document.getElementById('metricLatencyMedian') || document.getElementById('metricLatencyAvg');
     const tputEl = document.getElementById('metricThroughput');
     const tputPeakEl = document.getElementById('metricThroughputPeak');
 
-    if (latEl) latEl.textContent = latest.latency_ms.toFixed(2);
-    if (tputEl) tputEl.textContent = Math.round(latest.throughput_kbps).toLocaleString();
+    const curLat = latest.latency_ms;
+    const curTput = latest.throughput_kbps;
 
-    // Compute averages
-    const validLat = metricsList.map(m => m.latency_ms).filter(v => v > 0);
-    if (validLat.length > 0 && latAvgEl) {
-      const avg = validLat.reduce((a, b) => a + b, 0) / validLat.length;
-      latAvgEl.textContent = `Avg: ${avg.toFixed(2)} ms`;
+    // Tween and flash latency
+    if (latEl && Math.abs(curLat - this.prevLatency) > 0.01) {
+      this.tweenNumber(latEl, this.prevLatency, curLat, 400, v => v.toFixed(2));
+      const box = latEl.closest('.metric-box');
+      if (box && this.prevLatency > 0) {
+        const flashClass = curLat < this.prevLatency ? 'metric-flash-up' : 'metric-flash-down';
+        box.classList.add(flashClass);
+        setTimeout(() => box.classList.remove(flashClass), 500);
+      }
+      this.prevLatency = curLat;
+    }
+
+    // Tween throughput
+    if (tputEl && Math.abs(curTput - this.prevThroughput) > 10) {
+      this.tweenNumber(tputEl, this.prevThroughput, curTput, 400, v => Math.round(v).toLocaleString());
+      this.prevThroughput = curTput;
+    }
+
+    // Compute rolling median latency
+    const validLat = metricsList.map(m => m.latency_ms).filter(v => v > 0).sort((a, b) => a - b);
+    if (validLat.length > 0 && latMedianEl) {
+      const mid = Math.floor(validLat.length / 2);
+      const median = validLat.length % 2 !== 0 ? validLat[mid] : (validLat[mid - 1] + validLat[mid]) / 2;
+      latMedianEl.textContent = `Median: ${median.toFixed(2)} ms`;
     }
 
     const validTput = metricsList.map(m => m.throughput_kbps);
