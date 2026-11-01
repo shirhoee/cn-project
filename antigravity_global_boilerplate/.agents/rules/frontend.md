@@ -1,22 +1,32 @@
 ---
 trigger: model_decision
-description: Apply these guidelines whenever working on the frontend, UI components, styling, or client-side React code.
+description: Invariant rules for Vanilla HTML5, CSS Grid, and Canvas 2D telemetry dashboards.
 ---
 
+## Frontend Architecture & Patterns (SDN Telemetry & Canvas)
 
-## Frontend Architecture & Patterns
+### 1. Zero External Dependencies & CDN Invariant
+- **Vanilla Only:** Strictly vanilla HTML5, native CSS (custom properties), and ES6+ JavaScript.
+- **No CDNs:** No external scripts, styling CDNs, or third-party chart/UI libraries. Use system font fallbacks (`system-ui`, monospace) or locally committed assets.
 
-### 1. Component Design
-* **Separation of Concerns:** Keep components small and focused on a single responsibility.
-* **Server vs. Client:** Default to Server Components. Use `"use client";` only when interactivity, hooks (useState, useEffect), or browser APIs are strictly required.
-* **Props:** Define explicit TypeScript interfaces/types for all component props.
+### 2. Canvas 2D & DPR Sizing Rules (Feedback Loop Prevention)
+- **Deterministic Wrappers:** Every `<canvas>` MUST live inside a parent wrapper with deterministic CSS sizing (`position: relative; overflow: hidden; min-width: 0; min-height: 0;`).
+- **Decoupled Layout:** Canvas elements MUST be styled with `position: absolute; inset: 0; width: 100% !important; height: 100% !important; display: block;`.
+- **No Inline Style Width/Height:** NEVER mutate `canvas.style.width` or `canvas.style.height` in JavaScript. JavaScript is strictly responsible for setting backing pixel buffer dimensions (`canvas.width = Math.round(w * dpr)` and `ctx.setTransform(dpr, 0, 0, dpr, 0, 0)`).
+- **ResizeObserver Invariant:**
+  - Observe the wrapper container (`this.container`), never the canvas element itself.
+  - Guard observer callbacks against identical width/height/DPR to eliminate redundant renders.
+  - Coalesce and defer buffer resizing via `requestAnimationFrame` (`_resizePending` guard) so layout is never mutated synchronously inside an observer dispatch.
 
-### 2. Styling & UI
-* **Tailwind CSS:** Use utility classes for all styling. Do not use inline styles (`style={{}}`) or external CSS modules unless absolutely necessary.
-* **Component Library:** Use the established library (e.g., shadcn/ui). Re-use existing UI primitives (Buttons, Inputs, Dialogs) rather than building bespoke versions.
-* **Responsiveness:** Ensure all layouts are mobile-responsive by default using Tailwind's `sm:`, `md:`, and `lg:` prefixes.
+### 3. CSS Grid & Overflow Invariants
+- **Column Sizing:** NEVER use bare `1fr` for grid columns holding flexible or canvas content. Always use `minmax(0, Xfr)` to prevent `min-content` blowouts.
+- **Child Protection:** Explicitly declare `min-width: 0;` on all grid items, flex containers, and card wrappers.
+- **Root Protection:** Always enforce `html, body { overflow-x: hidden; max-width: 100vw; }`.
+- **Card-Level Scrolling:** Tables, logs, and telemetry lists must be scoped to their card containers (`overflow: auto`) with explicit word-breaking (`word-break: break-word;`).
 
-### 3. State Management & Data Fetching
-* **Local State:** Use `useState` or `useReducer` for localized component state.
-* **URL State:** Prefer keeping state in the URL search params (e.g., `?query=foo`) for filterable/shareable views.
-* **Mutations:** Use optimistic UI updates where applicable to ensure the interface feels immediately responsive.
+### 4. Telemetry Visualization & Outlier Rejection
+- **Dynamic Time-Series Ceilings:** Never calculate chart Y-axis ceilings with bare `Math.max()` over raw telemetry data.
+- **Outlier Filtering:** Always calculate rolling statistics ($p_{95}$ and rolling median). Clamp the display ceiling to $\max(\text{median} \times 3.5, p_{95}, \text{minCeiling})$ so transient network timeout spikes (e.g. 2000+ ms) do not permanently flatten healthy millisecond waveforms.
+
+### 5. Backend Asset Route Synchronization
+- Whenever adding or refactoring a frontend asset (`<script src="...">` or `<link href="...">`), verify that the backend server's static file handler / whitelist explicitly serves that exact path and Content-Type before testing.

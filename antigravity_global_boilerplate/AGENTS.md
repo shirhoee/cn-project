@@ -10,20 +10,21 @@
 * **Progressive Disclosure:** Context is our most precious resource. Do not load unnecessary files. Rely on domain-specific rules only when actively working in that domain.
 
 ## 2. Tech Stack & Architecture
-*(Note: To be dynamically populated by the `create_rules` skill after PRD generation)*
-* **Frontend:** [e.g., Next.js 15 App Router, React 19]
-* **Backend:** [e.g., Server Actions, FastAPI, Node]
-* **Database & ORM:** [e.g., Neon Postgres, Drizzle]
-* **Styling:** [e.g., Tailwind CSS v4, shadcn/ui]
+* **Network & Controller:** Mininet, OpenFlow 1.3, OS-Ken 3.1.1 (Python eventlet)
+* **Backend / Telemetry:** Python stdlib (`ThreadingHTTPServer`, `urllib`, `json`, SSE via `/api/stream`)
+* **Frontend:** Vanilla HTML5, Modern CSS (custom properties, CSS Grid/Flexbox), Canvas 2D, EventSource (SSE)
+* **Testing:** Python `unittest` (`tests/test_sanity.py`, `tests/test_dashboard_api.py`)
+* **Constraints:** Zero third-party frontend dependencies, zero external CDNs, deterministic layout bounding.
 
 ## 3. Universal Code Patterns
-* **Strict Validation:** All system boundaries (API routes, form submissions, database queries) MUST use strict validation schemas (e.g., Zod, Pydantic). Never trust client input.
-* **Error Handling:** Fail gracefully. Catch specific exceptions. Return standardized error payloads (e.g., `{ success: false, error: "Detailed message" }`).
+* **Strict Validation:** All system boundaries (API routes, form submissions, database queries) MUST use strict validation schemas. Never trust unverified client input.
+* **Error Handling:** Fail gracefully. Catch specific exceptions. Return standardized error payloads (e.g., `{"status": "error", "error": "Detailed message"}`).
 * **Environment Variables:** Never hardcode secrets. Always reference `process.env` or `os.environ`. Keep `.env.example` up to date.
 
 ## 4. On-Demand Context Triggers
-* **Frontend/UI:** When modifying React components, styling, or client-side logic, read `.agents/rules/frontend.md`.
-* **Backend/API:** When modifying API routes, database schemas, or server-side logic, read `.agents/rules/backend.md`.
-## Regression Testing Protocol
+* **Frontend/UI:** When modifying UI components, styling, canvas rendering, or client-side telemetry handling, read `.agents/rules/frontend.md`.
+* **Backend/API:** When modifying API routes, controller logic, or server-side telemetry streaming, read `.agents/rules/backend.md`.
+
+## 5. Regression Testing Protocol
 * Before completing any execution phase, you MUST verify that previous features remain intact.
-* If a global test script exists (e.g., `npm run test:e2e` or `bash tests/run-all.sh`), it must be executed successfully before handing control back to the user.
+* Global test suite (`python3 -m unittest discover tests -v`) must be executed successfully before handing control back to the user.
