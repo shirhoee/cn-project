@@ -60,9 +60,9 @@ class DashboardApp {
     // Render initial state from immediate fetch so "--" and "Loading..." never persist
     this.fetchTelemetry();
 
-    // Start SSE stream with automatic fallback if no event received within 2s
+    // Start SSE stream as the sole real-time path (fallback REST polling only on disconnect)
+    this.fallbackPollTimer = null;
     this.initSSE();
-    this.startPolling();
     this.startSharedAnimationLoop();
   }
 
@@ -96,12 +96,16 @@ class DashboardApp {
   }
 
   updateDebugBarMetrics() {
-    if (!window.location.search.includes('debug=1')) return;
+    if (!window.location.search.includes('debug=1') && document.getElementById('debugBar')?.classList.contains('hidden')) return;
 
     const frameEl = document.getElementById('debugFrameTime');
-    if (frameEl && this._lastFrameTimeMs !== undefined) {
-      frameEl.textContent = `${this._lastFrameTimeMs.toFixed(1)} ms`;
-      frameEl.className = `debug-val ${this._lastFrameTimeMs > 25 ? 'state-warn' : 'state-ok'}`;
+    if (frameEl && this._frameDeltas && this._frameDeltas.length > 0) {
+      const sorted = [...this._frameDeltas].sort((a, b) => a - b);
+      const p95 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))];
+      const mean = sorted.reduce((sum, v) => sum + v, 0) / sorted.length;
+      const fps = Math.round(1000 / (mean || 16.6));
+      frameEl.textContent = `${p95.toFixed(1)} ms (${fps} fps)`;
+      frameEl.className = `debug-val ${p95 > 25 ? 'state-warn' : (p95 > 50 ? 'state-err' : 'state-ok')}`;
     }
 
     const roEl = document.getElementById('debugRoFires');
@@ -127,6 +131,7 @@ class DashboardApp {
     let lastTime = performance.now();
     let frameCount = 0;
     let lastSecTime = lastTime;
+    this._frameDeltas = [];
 
     const tick = (now) => {
       if (!this._animRunning) return;
@@ -135,9 +140,13 @@ class DashboardApp {
       lastTime = now;
       this._lastFrameTimeMs = delta;
 
-      // Rate tracking for ?debug=1
+      // Maintain rolling buffer of 60 frames for p95 computation
+      this._frameDeltas.push(delta);
+      if (this._frameDeltas.length > 60) this._frameDeltas.shift();
+
+      // Rate tracking for debug readout
       frameCount++;
-      if (now - lastSecTime >= 1000) {
+      if (now - lastSecTime >= 250) {
         this._observerFiresPerSec = window._debugObserverFires || 0;
         window._debugObserverFires = 0;
         frameCount = 0;
@@ -216,14 +225,14 @@ class DashboardApp {
 
     this.updateDebugSse('CONNECTING...', 'state-warn');
 
-    // 2-second fallback watchdog: if SSE doesn't deliver initial data, force immediate polling
+    // Watchdog: if SSE doesn't deliver initial data within 2.5s, engage fallback polling
     let sseReceivedInitial = false;
     setTimeout(() => {
-      if (!sseReceivedInitial) {
-        console.warn('[DashboardApp] SSE stream did not yield data within 2s, fallback polling active.');
-        this.fetchTelemetry();
+      if (!sseReceivedInitial && !this.sseActive) {
+        console.warn('[DashboardApp] SSE stream did not yield initial data, activating fallback polling.');
+        this.startFallbackPolling();
       }
-    }, 2000);
+    }, 2500);
 
     try {
       this.eventSource = new EventSource('/api/stream');
@@ -232,6 +241,7 @@ class DashboardApp {
         this.markDataReceived();
         this.reconnectBackoff = 1000;
         this.sseActive = true;
+        this.stopFallbackPolling();
         this.updateDebugSse('STREAMING (LIVE)', 'state-ok');
       });
 
@@ -275,6 +285,7 @@ class DashboardApp {
         this.sseActive = false;
         this.updateDebugSse('DISCONNECTED (FALLBACK)', 'state-err');
         if (this.eventSource) this.eventSource.close();
+        this.startFallbackPolling();
         setTimeout(() => {
           this.reconnectBackoff = Math.min(8000, (this.reconnectBackoff || 1000) * 1.5);
           this.initSSE();
@@ -284,7 +295,37 @@ class DashboardApp {
       console.warn('SSE initialization failed, fallback polling active.', err);
       this.updateDebugSse('FAILED (FALLBACK)', 'state-err');
       this.recordError('SSE init: ' + err.message);
+      this.startFallbackPolling();
     }
+  }
+
+  startFallbackPolling() {
+    if (this.fallbackPollTimer || this.sseActive) return;
+    const interval = Math.max(1500, this.reconnectBackoff || 2000);
+    this.fallbackPollTimer = setInterval(() => {
+      if (this.sseActive) {
+        this.stopFallbackPolling();
+        return;
+      }
+      this.fetchTelemetry();
+    }, interval);
+  }
+
+  stopFallbackPolling() {
+    if (this.fallbackPollTimer) {
+      clearInterval(this.fallbackPollTimer);
+      this.fallbackPollTimer = null;
+    }
+  }
+
+  startPolling() {
+    // If SSE is alive, do not run redundant interval polling
+    if (this.sseActive) {
+      this.stopFallbackPolling();
+      return;
+    }
+    this.startFallbackPolling();
+  }
   }
 
   bindDomEvents() {
@@ -482,16 +523,6 @@ class DashboardApp {
     this.renderFlowTable();
   }
 
-  startPolling() {
-    if (this.pollTimer) clearInterval(this.pollTimer);
-    if (this.pollInterval <= 0) return; // Paused
-
-    this.fetchTelemetry();
-    this.pollTimer = setInterval(() => {
-      this.fetchTelemetry();
-    }, this.pollInterval);
-  }
-
   async fetchTelemetry() {
     try {
       // 1. Fetch telemetry snapshot
@@ -627,7 +658,7 @@ class DashboardApp {
     }
 
     if (this.connGauge) {
-      this.connGauge.setValue(s1Conns);
+      this.connGauge.setValue(s1Conns, !!data.controller?.failover_active);
     }
 
     // Failover recovery speed
