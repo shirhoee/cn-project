@@ -8,17 +8,31 @@ class ComparisonChart {
     if (!this.canvas) return;
     this.ctx = this.canvas.getContext('2d');
     this.dpr = window.devicePixelRatio || 1;
-    this.data = null;
+    this.data = {
+      static: { median_latency: 2002.3, avg_throughput: 0.0, success_rate: 33.3 },
+      dynamic: { median_latency: 0.72, avg_throughput: 10250.0, success_rate: 100.0 }
+    };
 
     this.resize();
+    this.render();
     this.loadData();
   }
 
   resize() {
     if (!this.canvas) return;
     const rect = this.canvas.getBoundingClientRect();
-    this.width = rect.width || 440;
-    this.height = rect.height || 180;
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.round(rect.width);
+    const h = Math.round(rect.height);
+
+    if (w === this._lastW && h === this._lastH && dpr === this._lastDpr) return;
+    this._lastW = w;
+    this._lastH = h;
+    this._lastDpr = dpr;
+
+    this.dpr = dpr;
+    this.width = w || 440;
+    this.height = h || 180;
     this.canvas.width = Math.round(this.width * this.dpr);
     this.canvas.height = Math.round(this.height * this.dpr);
     this.canvas.style.width = `${this.width}px`;

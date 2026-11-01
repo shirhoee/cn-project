@@ -9,12 +9,37 @@ class DashboardApp {
     this.currentDpid = 1; // Default active tab is Core Switch (s1)
     this.flowsData = {};
     this.lastEventCount = 0;
+    this.lastError = null;
+    this.sseActive = false;
 
-    // Initialize visualizer and chart
-    this.topoCanvas = new TopologyCanvas('topoCanvas');
-    this.metricsChart = new MetricsChart('metricsChart');
-    this.connGauge = new ConnectionGauge('connGauge');
-    this.comparisonChart = new ComparisonChart('comparisonCanvas');
+    // Initialize visualizers with individual try/catch boundaries
+    try {
+      this.topoCanvas = new TopologyCanvas('topoCanvas');
+    } catch (err) {
+      console.error('[DashboardApp] Failed to initialize TopologyCanvas:', err);
+      this.recordError('TopologyCanvas: ' + err.message);
+    }
+
+    try {
+      this.metricsChart = new MetricsChart('metricsChart');
+    } catch (err) {
+      console.error('[DashboardApp] Failed to initialize MetricsChart:', err);
+      this.recordError('MetricsChart: ' + err.message);
+    }
+
+    try {
+      this.connGauge = new ConnectionGauge('connGauge');
+    } catch (err) {
+      console.error('[DashboardApp] Failed to initialize ConnectionGauge:', err);
+      this.recordError('ConnectionGauge: ' + err.message);
+    }
+
+    try {
+      this.comparisonChart = new ComparisonChart('comparisonCanvas');
+    } catch (err) {
+      console.error('[DashboardApp] Failed to initialize ComparisonChart:', err);
+      this.recordError('ComparisonChart: ' + err.message);
+    }
 
     // Historical tracking for tweens and toasts
     this.lastFailover = false;
@@ -28,10 +53,44 @@ class DashboardApp {
     this.activeLogFilter = 'ALL';
     this.lastFlowCount = {};
 
+    this.initDebugBar();
     this.bindDomEvents();
     this.initWatchdog();
+
+    // Render initial state from immediate fetch so "--" and "Loading..." never persist
+    this.fetchTelemetry();
+
+    // Start SSE stream with automatic fallback if no event received within 2s
     this.initSSE();
     this.startPolling();
+  }
+
+  initDebugBar() {
+    if (window.location.search.includes('debug=1')) {
+      const db = document.getElementById('debugBar');
+      if (db) db.classList.remove('hidden');
+    }
+
+    window.addEventListener('error', (e) => {
+      this.recordError(e.message || 'Script error');
+    });
+  }
+
+  recordError(msg) {
+    this.lastError = msg;
+    const errEl = document.getElementById('debugLastError');
+    if (errEl) {
+      errEl.textContent = msg;
+      errEl.className = 'debug-val state-err';
+    }
+  }
+
+  updateDebugSse(state, cssClass = '') {
+    const sseEl = document.getElementById('debugSseState');
+    if (sseEl) {
+      sseEl.textContent = state;
+      sseEl.className = `debug-val ${cssClass}`;
+    }
   }
 
   initWatchdog() {
@@ -50,6 +109,11 @@ class DashboardApp {
     this.lastDataTimestamp = Date.now();
     this.showOfflineOverlay(false);
     this.markControllerOnline();
+
+    const tsEl = document.getElementById('debugLastTimestamp');
+    if (tsEl) {
+      tsEl.textContent = new Date().toLocaleTimeString();
+    }
   }
 
   showOfflineOverlay(show) {
@@ -71,11 +135,23 @@ class DashboardApp {
 
   initSSE() {
     if (!window.EventSource) {
+      this.updateDebugSse('UNSUPPORTED', 'state-warn');
       return;
     }
     if (this.eventSource) {
       this.eventSource.close();
     }
+
+    this.updateDebugSse('CONNECTING...', 'state-warn');
+
+    // 2-second fallback watchdog: if SSE doesn't deliver initial data, force immediate polling
+    let sseReceivedInitial = false;
+    setTimeout(() => {
+      if (!sseReceivedInitial) {
+        console.warn('[DashboardApp] SSE stream did not yield data within 2s, fallback polling active.');
+        this.fetchTelemetry();
+      }
+    }, 2000);
 
     try {
       this.eventSource = new EventSource('/api/stream');
@@ -83,36 +159,49 @@ class DashboardApp {
       this.eventSource.addEventListener('open', () => {
         this.markDataReceived();
         this.reconnectBackoff = 1000;
+        this.sseActive = true;
+        this.updateDebugSse('STREAMING (LIVE)', 'state-ok');
       });
 
       this.eventSource.addEventListener('telemetry', (e) => {
         try {
           const data = JSON.parse(e.data);
+          sseReceivedInitial = true;
           this.markDataReceived();
           this.updateHeaderStatus(data);
-          this.topoCanvas.updateState(data);
-        } catch (err) {}
+          if (this.topoCanvas) this.topoCanvas.updateState(data);
+        } catch (err) {
+          this.recordError('SSE telemetry parse: ' + err.message);
+        }
       });
 
       this.eventSource.addEventListener('flows', (e) => {
         try {
           const data = JSON.parse(e.data);
+          sseReceivedInitial = true;
           this.markDataReceived();
           this.flowsData = data;
           this.renderFlowTable();
-        } catch (err) {}
+        } catch (err) {
+          this.recordError('SSE flows parse: ' + err.message);
+        }
       });
 
       this.eventSource.addEventListener('event', (e) => {
         try {
           const ev = JSON.parse(e.data);
+          sseReceivedInitial = true;
           this.markDataReceived();
           this.eventsCache.unshift(ev);
           this.updateEventLog(this.eventsCache);
-        } catch (err) {}
+        } catch (err) {
+          this.recordError('SSE event parse: ' + err.message);
+        }
       });
 
       this.eventSource.onerror = () => {
+        this.sseActive = false;
+        this.updateDebugSse('DISCONNECTED (FALLBACK)', 'state-err');
         if (this.eventSource) this.eventSource.close();
         setTimeout(() => {
           this.reconnectBackoff = Math.min(8000, (this.reconnectBackoff || 1000) * 1.5);
@@ -121,6 +210,8 @@ class DashboardApp {
       };
     } catch (err) {
       console.warn('SSE initialization failed, fallback polling active.', err);
+      this.updateDebugSse('FAILED (FALLBACK)', 'state-err');
+      this.recordError('SSE init: ' + err.message);
     }
   }
 
@@ -666,7 +757,11 @@ class DashboardApp {
   }
 }
 
-// Bootstrap on DOM load
-window.addEventListener('DOMContentLoaded', () => {
+// Resilient bootstrap on DOM load or immediate if already interactive
+if (document.readyState === 'loading') {
+  window.addEventListener('DOMContentLoaded', () => {
+    window.app = new DashboardApp();
+  });
+} else {
   window.app = new DashboardApp();
-});
+}

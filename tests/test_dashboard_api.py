@@ -194,6 +194,68 @@ class TestDashboardAndApi(unittest.TestCase):
         self.assertFalse(snap["controller"]["nat_redirect_active"])
         self.assertFalse(snap["controller"]["failover_active"])
 
+    def test_all_index_html_assets(self):
+        """Verify that every <script src> and <link href> in index.html returns 200 with correct content-type."""
+        import re
+        html_path = os.path.join(REPO_ROOT, "src", "dashboard", "index.html")
+        with open(html_path, "r", encoding="utf-8") as f:
+            html = f.read()
+
+        links = re.findall(r'<link[^>]+href=[\"\']([^\"\']+)[\"\']', html)
+        scripts = re.findall(r'<script[^>]+src=[\"\']([^\"\']+)[\"\']', html)
+
+        self.assertGreaterEqual(len(links), 1)
+        self.assertGreaterEqual(len(scripts), 5)
+
+        for href in links:
+            url = f"http://127.0.0.1:{self.port}{href if href.startswith('/') else '/' + href}"
+            with urllib.request.urlopen(url, timeout=2.0) as resp:
+                self.assertEqual(resp.status, 200, f"Failed asset: {url}")
+                self.assertIn("text/css", resp.headers.get("Content-Type", ""), f"Wrong type for {url}")
+
+        for src in scripts:
+            url = f"http://127.0.0.1:{self.port}{src if src.startswith('/') else '/' + src}"
+            with urllib.request.urlopen(url, timeout=2.0) as resp:
+                self.assertEqual(resp.status, 200, f"Failed asset: {url}")
+                ct = resp.headers.get("Content-Type", "")
+                self.assertTrue("javascript" in ct, f"Wrong script type {ct} for {url}")
+
+    def test_sse_stream_concurrent_telemetry_non_blocking(self):
+        """Verify that an active SSE stream does NOT block concurrent /api/telemetry requests."""
+        import time
+        sse_ready = threading.Event()
+        sse_closed = threading.Event()
+
+        def stream_consumer():
+            try:
+                url = f"http://127.0.0.1:{self.port}/api/stream"
+                req = urllib.request.Request(url)
+                with urllib.request.urlopen(req, timeout=5.0) as stream_resp:
+                    sse_ready.set()
+                    while not sse_closed.is_set():
+                        line = stream_resp.readline()
+                        if not line:
+                            break
+            except Exception:
+                pass
+
+        t = threading.Thread(target=stream_consumer, daemon=True)
+        t.start()
+
+        self.assertTrue(sse_ready.wait(timeout=2.0), "SSE stream did not open in time")
+
+        # Concurrently request /api/telemetry while SSE is actively streaming
+        t0 = time.time()
+        url = f"http://127.0.0.1:{self.port}/api/telemetry"
+        with urllib.request.urlopen(url, timeout=1.5) as resp:
+            self.assertEqual(resp.status, 200)
+            data = json.loads(resp.read().decode('utf-8'))
+            self.assertIn("controller", data)
+        duration = time.time() - t0
+
+        self.assertLess(duration, 1.0, f"Concurrent telemetry request blocked for {duration:.3f}s")
+        sse_closed.set()
+
 
 if __name__ == "__main__":
     unittest.main()

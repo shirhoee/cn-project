@@ -450,13 +450,17 @@ class DashboardHttpHandler(http.server.BaseHTTPRequestHandler):
             file_path = os.path.join(dashboard_dir, clean_path)
 
         if os.path.isfile(file_path):
-            mime_type, _ = mimetypes.guess_type(file_path)
-            if not mime_type:
-                if file_path.endswith('.css'):
-                    mime_type = 'text/css'
-                elif file_path.endswith('.js'):
-                    mime_type = 'application/javascript'
-                else:
+            if file_path.endswith('.js'):
+                mime_type = 'application/javascript; charset=utf-8'
+            elif file_path.endswith('.css'):
+                mime_type = 'text/css; charset=utf-8'
+            elif file_path.endswith('.html'):
+                mime_type = 'text/html; charset=utf-8'
+            elif file_path.endswith('.json'):
+                mime_type = 'application/json'
+            else:
+                mime_type, _ = mimetypes.guess_type(file_path)
+                if not mime_type:
                     mime_type = 'text/plain'
 
             try:

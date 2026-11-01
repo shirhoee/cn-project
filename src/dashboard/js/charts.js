@@ -26,9 +26,18 @@ class MetricsChart {
 
   resize() {
     const rect = this.container.getBoundingClientRect();
-    this.dpr = window.devicePixelRatio || 1;
-    this.width = rect.width || 480;
-    this.height = rect.height || 120;
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.round(rect.width);
+    const h = Math.round(rect.height);
+
+    if (w === this._lastW && h === this._lastH && dpr === this._lastDpr) return;
+    this._lastW = w;
+    this._lastH = h;
+    this._lastDpr = dpr;
+
+    this.dpr = dpr;
+    this.width = w || 480;
+    this.height = h || 120;
 
     this.canvas.width = Math.round(this.width * this.dpr);
     this.canvas.height = Math.round(this.height * this.dpr);
@@ -277,7 +286,11 @@ class MetricsChart {
 
     // Draw rounded rect
     ctx.beginPath();
-    ctx.roundRect(bx, by, boxW, boxH, 5);
+    if (typeof ctx.roundRect === 'function') {
+      ctx.roundRect(bx, by, boxW, boxH, 5);
+    } else {
+      ctx.rect(bx, by, boxW, boxH);
+    }
     ctx.fill();
     ctx.stroke();
 

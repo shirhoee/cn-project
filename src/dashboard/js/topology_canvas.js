@@ -60,17 +60,25 @@ class TopologyCanvas {
 
   resize() {
     const rect = this.container.getBoundingClientRect();
-    this.dpr = window.devicePixelRatio || 1;
-    this.width = rect.width || 920;
-    this.height = Math.max(rect.height || 580, 520);
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.round(rect.width);
+    const h = Math.round(rect.height);
+
+    if (w === this._lastW && h === this._lastH && dpr === this._lastDpr) return;
+    this._lastW = w;
+    this._lastH = h;
+    this._lastDpr = dpr;
+
+    this.dpr = dpr;
+    this.width = w || 920;
+    this.height = h || 580;
 
     this.canvas.width = Math.round(this.width * this.dpr);
     this.canvas.height = Math.round(this.height * this.dpr);
-    this.canvas.style.width = `${this.width}px`;
-    this.canvas.style.height = `${this.height}px`;
 
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     this.updateNodePositions();
+    this.render();
   }
 
   updateNodePositions() {
@@ -207,9 +215,6 @@ class TopologyCanvas {
 
   stopLoop() {
     this.loopRunning = false;
-  }
-    };
-    requestAnimationFrame(animate);
   }
 
   spawnPacket() {

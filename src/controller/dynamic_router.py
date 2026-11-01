@@ -36,6 +36,7 @@ class DynamicRouter13(app_manager.OSKenApp):
     def start_dashboard_server(self, port=8080):
         try:
             server = http.server.ThreadingHTTPServer(('0.0.0.0', port), DashboardHttpHandler)
+            server.daemon_threads = True
             server.router_app = self
             server_thread = threading.Thread(target=server.serve_forever, daemon=True)
             server_thread.start()

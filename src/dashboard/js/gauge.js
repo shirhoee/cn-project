@@ -20,8 +20,17 @@ class ConnectionGauge {
   resize() {
     if (!this.canvas) return;
     const rect = this.canvas.getBoundingClientRect();
-    this.width = rect.width || 100;
-    this.height = rect.height || 65;
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.round(rect.width);
+    const h = Math.round(rect.height);
+    if (w === this._lastW && h === this._lastH && dpr === this._lastDpr) return;
+    this._lastW = w;
+    this._lastH = h;
+    this._lastDpr = dpr;
+
+    this.dpr = dpr;
+    this.width = w || 100;
+    this.height = h || 65;
     this.canvas.width = Math.round(this.width * this.dpr);
     this.canvas.height = Math.round(this.height * this.dpr);
     this.canvas.style.width = `${this.width}px`;
