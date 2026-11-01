@@ -700,7 +700,7 @@ class DashboardApp {
     if (isFailover) {
       if (failoverDot && failoverDot.className !== 'status-dot dot-cyan') failoverDot.className = 'status-dot dot-cyan';
       if (failoverText && failoverText.textContent !== 'FAILOVER ACTIVE') failoverText.textContent = 'FAILOVER ACTIVE';
-      if (failoverPill && failoverPill.style.borderColor !== 'rgba(6, 182, 212, 0.5)') failoverPill.style.borderColor = 'rgba(6, 182, 212, 0.5)';
+      if (failoverPill && failoverPill.style.borderColor !== 'rgba(100, 210, 255, 0.5)') failoverPill.style.borderColor = 'rgba(100, 210, 255, 0.5)';
     } else {
       if (failoverDot && failoverDot.className !== 'status-dot dot-gray') failoverDot.className = 'status-dot dot-gray';
       if (failoverText && failoverText.textContent !== 'NORMAL') failoverText.textContent = 'NORMAL';
@@ -730,7 +730,7 @@ class DashboardApp {
     if (isOverload) {
       if (serverDot && serverDot.className !== 'status-dot dot-red') serverDot.className = 'status-dot dot-red';
       if (serverText && serverText.textContent !== 'OVERLOAD') serverText.textContent = 'OVERLOAD';
-      if (serverPill && serverPill.style.borderColor !== 'rgba(239, 68, 68, 0.5)') serverPill.style.borderColor = 'rgba(239, 68, 68, 0.5)';
+      if (serverPill && serverPill.style.borderColor !== 'rgba(255, 69, 58, 0.5)') serverPill.style.borderColor = 'rgba(255, 69, 58, 0.5)';
     } else {
       if (serverDot && serverDot.className !== 'status-dot dot-green') serverDot.className = 'status-dot dot-green';
       if (serverText && serverText.textContent !== 'HEALTHY') serverText.textContent = 'HEALTHY';

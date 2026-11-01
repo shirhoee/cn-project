@@ -51,6 +51,9 @@ class TopologyCanvas {
     this.ripples = [];
     this.dashOffset = 0;
     this.linkTransitionS1S2 = 0.0; // 0 = UP, 1 = DOWN
+    this.failoverTransition = 0.0;
+    this.overloadTransition = 0.0;
+    this.natTransition = 0.0;
     this.lastFlowTotals = {};
     this.lastFailover = false;
     this.lastOverload = false;
@@ -301,10 +304,18 @@ class TopologyCanvas {
     }
 
     this.pulseAngle += 0.05;
-    this.dashOffset = (this.dashOffset - 0.45) % 16;
+    this.dashOffset = (this.dashOffset - 0.55) % 32;
 
-    // Smooth link transition lerp (0 = UP, 1 = DOWN)
+    // Smooth transition lerps for failover and overload states
     const targetLink = (this.state.linkS1S2Down || this.state.failoverActive) ? 1.0 : 0.0;
+    this.failoverTransition += (targetLink - this.failoverTransition) * 0.12;
+
+    const targetOverload = this.state.server1Overload ? 1.0 : 0.0;
+    this.overloadTransition += (targetOverload - this.overloadTransition) * 0.12;
+
+    const targetNat = this.state.natRedirectActive ? 1.0 : 0.0;
+    this.natTransition += (targetNat - this.natTransition) * 0.12;
+
     const linkDiff = Math.abs(targetLink - this.linkTransitionS1S2);
     if (linkDiff > 0.005) {
       this.linkTransitionS1S2 += (targetLink - this.linkTransitionS1S2) * 0.12;
@@ -350,7 +361,8 @@ class TopologyCanvas {
       progress: 0.0,
       speed: 0.018 + Math.random() * 0.006,
       color: isRerouted ? '#ff9f0a' : '#64d2ff',
-      radius: isRerouted ? 4.2 : 3.8
+      isRerouted,
+      radius: isRerouted ? 4.4 : 3.8
     });
   }
 
@@ -388,9 +400,9 @@ class TopologyCanvas {
     const ctx = this.ctx;
     ctx.clearRect(0, 0, this.width, this.height);
 
-    // 1. Active Failover Corridor Photon Sweep
-    if (this.state.failoverActive || this.state.linkS1S2Down) {
-      this.drawFailoverPulse(ctx);
+    // 1. Failover Animation: severed link pulses red + backup path animated dashes + label easing in
+    if (this.failoverTransition > 0.01) {
+      this.drawFailoverEffects(ctx);
     }
 
     // 2. Active Path Hop Trace
@@ -398,17 +410,20 @@ class TopologyCanvas {
       this.drawPathTrace(ctx);
     }
 
-    // 3. Photonic Comet Particles
+    // 3. Photonic Comet Particles (with distinct NAT reroute color trails)
     if (this.animationRunning) {
       this.drawParticles(ctx);
     }
 
-    // 4. Active Radiant Rings
+    // 4. Dynamic Node Badges & Smooth State Transitions
+    this.drawDynamicNodeBadges(ctx);
+
+    // 5. Active Radiant Rings
     if (this.ripples.length > 0) {
       this.drawRipples(ctx);
     }
 
-    // 5. Hover Highlight Halo & macOS Quick Look Tooltip
+    // 6. Hover Highlight Halo & macOS Quick Look Tooltip
     if (this.state.hoveredNode) {
       const hn = this.state.hoveredNode;
       window.glowCache.drawGlow(ctx, hn.x, hn.y, hn.color || '#0a84ff', hn.radius, 14);
@@ -416,20 +431,85 @@ class TopologyCanvas {
     }
   }
 
-  drawFailoverPulse(ctx) {
+  drawFailoverEffects(ctx) {
+    const s1 = this.nodes.s1;
     const s2 = this.nodes.s2;
     const s3 = this.nodes.s3;
-    if (!s2 || !s3) return;
+    if (!s1 || !s2 || !s3) return;
+
+    // 1. Severed link s1-s2: pulses red
+    const redAlpha = (0.35 + 0.65 * Math.abs(Math.sin(this.pulseAngle * 2.5))) * this.failoverTransition;
+    ctx.save();
+    ctx.strokeStyle = `rgba(255, 69, 58, ${redAlpha})`;
+    ctx.lineWidth = 3;
+    ctx.setLineDash([8, 8]);
+    ctx.beginPath();
+    ctx.moveTo(s1.x, s1.y);
+    ctx.lineTo(s2.x, s2.y);
+    ctx.stroke();
+
+    // Severed pulsing badge with soft halo
+    ctx.globalAlpha = this.failoverTransition;
+    window.glowCache.drawGlow(ctx, (s1.x + s2.x) / 2, (s1.y + s2.y) / 2 - 12, '#ff453a', 8, 12);
+    this.drawLinkBadge(ctx, (s1.x + s2.x) / 2, (s1.y + s2.y) / 2 - 12, 'SEVERED', '#ff453a');
+    ctx.restore();
+
+    // 2. Backup path s2-s3: draws in as an animated dash
+    ctx.save();
+    // Ambient cyan glow
+    ctx.strokeStyle = `rgba(100, 210, 255, ${0.35 * this.failoverTransition})`;
+    ctx.lineWidth = 9;
+    ctx.beginPath();
+    ctx.moveTo(s2.x, s2.y);
+    ctx.lineTo(s3.x, s3.y);
+    ctx.stroke();
+
+    // Animated marching dash
+    ctx.strokeStyle = `rgba(100, 210, 255, ${0.95 * this.failoverTransition})`;
+    ctx.lineWidth = 3.5;
+    ctx.setLineDash([10, 6]);
+    ctx.lineDashOffset = this.dashOffset;
+    ctx.beginPath();
+    ctx.moveTo(s2.x, s2.y);
+    ctx.lineTo(s3.x, s3.y);
+    ctx.stroke();
+
+    // Photon sweep along backup corridor
     const sweepT = (Math.sin(this.pulseAngle * 1.8) + 1) / 2;
     const sweepX = s2.x + (s3.x - s2.x) * sweepT;
     const sweepY = s2.y + (s3.y - s2.y) * sweepT;
-    ctx.save();
     window.glowCache.drawGlow(ctx, sweepX, sweepY, '#64d2ff', 4.5, 14);
     ctx.beginPath();
     ctx.arc(sweepX, sweepY, 4, 0, Math.PI * 2);
     ctx.fillStyle = '#ffffff';
     ctx.fill();
+
+    // 3. "FAILOVER ACTIVE" label easing in
+    ctx.globalAlpha = Math.min(1.0, this.failoverTransition * 1.2);
+    this.drawLinkBadge(ctx, (s2.x + s3.x) / 2, s2.y - 18, 'FAILOVER ACTIVE', '#64d2ff');
     ctx.restore();
+  }
+
+  drawDynamicNodeBadges(ctx) {
+    // Server 1 overload status chip with smooth transition lerp
+    if (this.overloadTransition > 0.01 && this.nodes.server1) {
+      const s1 = this.nodes.server1;
+      ctx.save();
+      ctx.globalAlpha = this.overloadTransition;
+      window.glowCache.drawGlow(ctx, s1.x, s1.y, '#ff453a', s1.radius, 16);
+      this.drawMiniBadge(ctx, s1.x, s1.y - s1.radius - 10, 'OVERLOAD', '#ff453a');
+      ctx.restore();
+    }
+
+    // Server 2 NAT redirect target chip with smooth transition lerp
+    if (this.natTransition > 0.01 && this.nodes.server2) {
+      const s2 = this.nodes.server2;
+      ctx.save();
+      ctx.globalAlpha = this.natTransition;
+      window.glowCache.drawGlow(ctx, s2.x, s2.y, '#ff9f0a', s2.radius, 14);
+      this.drawMiniBadge(ctx, s2.x, s2.y - s2.radius - 10, 'TARGET (NAT)', '#ff9f0a');
+      ctx.restore();
+    }
   }
 
   drawBackground(ctx) {
@@ -445,12 +525,8 @@ class TopologyCanvas {
     const s3 = this.nodes.s3;
     if (!s1 || !s2 || !s3) return;
 
-    // Link s1-s2 (Primary Corridor with lerp transition)
-    if (this.linkTransitionS1S2 > 0.1) {
-      const alpha = 0.35 + 0.65 * Math.abs(Math.sin(this.pulseAngle));
-      this.drawLinkLine(ctx, s1, s2, `rgba(255, 69, 58, ${alpha})`, 3, [8, 8]);
-      this.drawLinkBadge(ctx, (s1.x + s2.x) / 2, (s1.y + s2.y) / 2 - 12, 'SEVERED', '#ff453a');
-    } else {
+    // Link s1-s2 (Primary Corridor)
+    if (!this.state.failoverActive && !this.state.linkS1S2Down) {
       this.drawConduit(ctx, s1, s2, '#0a84ff', 2.8);
     }
     // Port badges along s1-s2
@@ -462,11 +538,8 @@ class TopologyCanvas {
     this.drawPortBadgeAlong(ctx, s1, s3, 0.28, 's1:2');
     this.drawPortBadgeAlong(ctx, s1, s3, 0.72, 's3:1');
 
-    // Link s2-s3 (Backup Corridor: Marching Dashes or Radiant Wave)
-    if (this.state.failoverActive || this.state.linkS1S2Down) {
-      this.drawGlowLine(ctx, s2, s3, '#64d2ff', 3.5);
-      this.drawLinkBadge(ctx, (s2.x + s3.x) / 2, s2.y - 18, 'FAILOVER ACTIVE', '#64d2ff');
-    } else {
+    // Link s2-s3 (Backup Corridor)
+    if (!this.state.failoverActive && !this.state.linkS1S2Down) {
       this.drawLinkLine(ctx, s2, s3, 'rgba(99, 99, 102, 0.5)', 2, [6, 6]);
       this.drawLinkBadge(ctx, (s2.x + s3.x) / 2, s2.y - 18, 'STANDBY', '#8e8e93');
     }
@@ -599,23 +672,27 @@ class TopologyCanvas {
       const curX = from.x + (to.x - from.x) * p.progress;
       const curY = from.y + (to.y - from.y) * p.progress;
 
-      // Exponential comet tail
-      const tailSteps = 7;
+      // Exponential comet tail: NAT reroute packets get distinct extended amber-to-crimson trail
+      const isRerouted = !!p.isRerouted;
+      const tailSteps = isRerouted ? 11 : 7;
+      const stepDist = isRerouted ? 0.022 : 0.015;
+
       for (let t = tailSteps; t >= 1; t--) {
-        const trailProg = Math.max(0, p.progress - t * 0.015);
+        const trailProg = Math.max(0, p.progress - t * stepDist);
         const tx = from.x + (to.x - from.x) * trailProg;
         const ty = from.y + (to.y - from.y) * trailProg;
-        const alpha = Math.pow(1 - (t / tailSteps), 2.2) * 0.45;
+        const alpha = Math.pow(1 - (t / tailSteps), 2.2) * (isRerouted ? 0.65 : 0.45);
         ctx.beginPath();
-        ctx.arc(tx, ty, p.radius * (1 - t * 0.08), 0, Math.PI * 2);
-        ctx.fillStyle = p.color;
+        ctx.arc(tx, ty, p.radius * (1 - t * 0.06), 0, Math.PI * 2);
+        // NAT reroute trail color fades from amber #ff9f0a to crimson #ff453a at tail tip
+        ctx.fillStyle = isRerouted ? (t > 5 ? '#ff453a' : '#ff9f0a') : p.color;
         ctx.globalAlpha = alpha;
         ctx.fill();
       }
 
       // Luminous photon core via cached offscreen glow sprite + crisp core
       ctx.globalAlpha = 1.0;
-      window.glowCache.drawGlow(ctx, curX, curY, p.color, p.radius, 12);
+      window.glowCache.drawGlow(ctx, curX, curY, p.color, p.radius, isRerouted ? 16 : 12);
       ctx.beginPath();
       ctx.arc(curX, curY, p.radius, 0, Math.PI * 2);
       ctx.fillStyle = '#ffffff';
@@ -669,13 +746,7 @@ class TopologyCanvas {
         ctx.fillText('OF1.3', n.x, n.y + 16);
 
       } else if (n.type === 'server') {
-        const isOverload = n.id === 'server1' && this.state.server1Overload;
-        const color = isOverload ? '#ff453a' : n.color;
-
-        // Halo glow via offscreen sprite for overload
-        if (isOverload) {
-          window.glowCache.drawGlow(ctx, n.x, n.y, '#ff453a', n.radius, 16);
-        }
+        const color = n.color;
 
         // Concentric circular node with cached gradient
         ctx.beginPath();
@@ -692,12 +763,6 @@ class TopologyCanvas {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('SRV', n.x, n.y);
-
-        if (isOverload) {
-          this.drawMiniBadge(ctx, n.x, n.y - n.radius - 10, 'OVERLOAD', '#ff453a');
-        } else if (n.id === 'server2' && this.state.natRedirectActive) {
-          this.drawMiniBadge(ctx, n.x, n.y - n.radius - 10, 'TARGET', '#0a84ff');
-        }
 
       } else if (n.type === 'client') {
         ctx.beginPath();
