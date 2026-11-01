@@ -114,7 +114,10 @@ cn_project/
 ├── PROJECT_PLAN.md                # Task delegation & team role distribution
 ├── performance_metrics.csv        # Benchmarking evaluation log output
 ├── plans/                         # Feature execution plans
-│   └── phase-5-docs-cleanup-and-verification.md
+│   ├── phase-5-docs-cleanup-and-verification.md
+│   ├── phase-6-live-telemetry-dashboard.md
+│   ├── phase-7-dashboard-polish.md
+│   └── apple-ui-redesign-spec.md
 ├── src/
 │   ├── app/
 │   │   ├── client.py              # TCP socket client measuring latency & throughput
@@ -122,7 +125,18 @@ cn_project/
 │   │   └── spam_client.py         # Concurrent connection generator for load triggering
 │   ├── controller/
 │   │   ├── dynamic_router.py      # Reactive SDN controller (Failover + REST load balancing)
-│   │   └── static_router.py       # Baseline static OpenFlow 1.3 controller
+│   │   ├── static_router.py       # Baseline static OpenFlow 1.3 controller
+│   │   └── telemetry_handler.py   # Telemetry Registry & Dashboard HTTP Handler (SSE)
+│   ├── dashboard/                 # Zero-dependency Apple-grade browser visualizer
+│   │   ├── index.html             # Main dashboard UI
+│   │   ├── styles.css             # Apple HIG smoked glass dark-mode styling
+│   │   └── js/
+│   │       ├── app.js             # Dashboard controller & keyboard shortcuts
+│   │       ├── charts.js          # Canvas time-series latency/throughput graph
+│   │       ├── comparison.js      # Keynote benchmark grouped bar comparison chart
+│   │       ├── gauge.js           # Apple Watch Activity Ring concentric gauge
+│   │       ├── toast.js           # iOS Dynamic Island floating pill notifications
+│   │       └── topology_canvas.js # 60 FPS Canvas 2D topology visualizer
 │   ├── network/
 │   │   ├── start_network.sh       # Convenience starter script for Mininet
 │   │   └── topology.py            # Mininet topology script with explicit port bindings
@@ -131,6 +145,7 @@ cn_project/
 └── tests/
     ├── evaluate_performance.py    # Automated Mininet evaluation comparing static vs dynamic
     ├── evaluate_performance.sh    # Evaluation execution helper script
+    ├── test_dashboard_api.py      # Integration test for dashboard endpoints
     └── test_sanity.py             # Automated unit tests validating port bindings & classes
 ```
 
@@ -174,12 +189,16 @@ cn_project/
   * Built real-time OpenFlow 1.3 flow table tabs and live event stream terminal with automatic JSON polling.
   * Authored automated endpoint test suite (`tests/test_dashboard_api.py`).
 
-* **Phase 7: Presentation-Grade UI Polish & Real-Time Pipeline (Deliverable D2 - Completed)**
-  * **Real-Time Data Pipeline:** Upgraded from plain polling to Server-Sent Events (`GET /api/stream`) with auto-reconnection and connection watchdog overlay.
+* **Phase 7: Presentation-Grade UI Polish & Apple Human Interface Elevation (Deliverable D2 - Completed)**
+  * **Real-Time Data Pipeline:** High-performance Server-Sent Events (`GET /api/stream`) with auto-reconnection and connection watchdog overlay.
+  * **Apple HIG & macOS Sequoia Aesthetic:** Smoked glass materials with dual-stage backdrop filters (`blur(28px) saturate(190%)`), OLED space black grounding, and top specular chamfer edge highlights (`inset 0 1px 0 rgba(255,255,255,0.12)`).
+  * **Retina Topology Visualizer:** Milled metal squircle switches with radial metallic gradients, glowing status pearls, multi-layer luminous conduits, frosted port badges, and photonic comet packet streams with exponential decay tails.
+  * **Apple Watch Activity Rings:** Dual concentric circular rings rendering active Server 1 connection load and Corridor Capacity with rounded caps and drop shadows.
+  * **macOS Activity Monitor Health Waveform:** Monotone cubic spline curve with soft linear gradient area decay, breathing terminal pulse dot, and frosted glass crosshair tooltip.
+  * **Apple Keynote Benchmark Visualizer:** Grouped capsule bars comparing Latency, Throughput, and Availability with bold emerald multiplier callout badges (**"2,780× Faster"**, **"3× Uptime"**).
+  * **macOS Console.app Flow Table:** Segmented pill switcher with smooth chiclets, subtle zebra striping, and Dynamic Island flow rule diff chips (`+2 rules`).
+  * **iOS Dynamic Island Notifications:** Floating top-center pill notifications with bouncy spring physics, glowing progress hairlines, and specular smoked glass.
   * **Failover Recovery Stopwatch:** Controller accurately records microsecond-precision hardware flow mod duration (< 2.5 ms) displayed in the real-time metrics row.
-  * **Active Connection Gauge:** Radial canvas arc meter visually showing active connections against overload threshold (0 to 3+ conns).
-  * **Static vs. Dynamic Evaluation Chart:** Interactive grouped bar chart pulling from `performance_metrics.csv` to visually present the 100% vs 33% reliability advantage for examiners.
   * **Click-to-Trace Forwarding Verification:** Interactive canvas tool allowing users to click a client then a server to highlight the active hop-by-hop forwarding path.
-  * **One-Click Simulation Triggers:** Built-in DEMO buttons for instantaneous failover and overload demonstration directly from the web interface.
-  * **Presenter Mode & Keyboard Shortcuts:** High-contrast projector mode and keyboard accelerators (`1`, `2`, `R`, `P`, `S`, `?`) for smooth viva presentation.
+  * **One-Click Simulation Triggers & Presenter Mode:** Built-in DEMO buttons and keyboard accelerators (`1`, `2`, `R`, `P`, `S`, `?`) for smooth viva presentation.
 

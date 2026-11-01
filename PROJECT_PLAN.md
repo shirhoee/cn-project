@@ -47,4 +47,19 @@ Shaun is responsible for the Mininet data plane infrastructure and the metrics i
 *   **Data Analysis:** Compile the final CSV outputs into the comparison metrics required for the project report/presentation.
 
 ---
-*Note: The project is currently in the active building and integration stage. Core components are being written and tested locally before the final end-to-end integration.*
+
+## 3. Live Telemetry & Presentation Console (Phase 6 & 7: Apple UI Elevation)
+
+To elevate the project into a presentation-grade academic demonstration for viva defense and final evaluation, the team designed and implemented an autonomous real-time telemetry console:
+
+### Frontend Engineering & Apple HIG Design Language
+* **Design Inspiration:** Built per **Apple Human Interface Guidelines (macOS Sequoia / iOS 18)** and the **apple.com presentation aesthetic**.
+* **Zero-Dependency Architecture:** Pure vanilla HTML5, CSS3, ES6+ JavaScript, and Canvas 2D without third-party libraries or external CDNs.
+* **Retina Canvas Visualizer (`topology_canvas.js`):** 60 FPS interactive topology engine with milled metallic squircle switches, glowing status pearls, multi-layer luminous conduits, and photonic comet packet streams.
+* **Apple Watch Activity Rings (`gauge.js`):** Dual concentric circular rings rendering active Server 1 connection load and Corridor Capacity with rounded caps and drop shadows.
+* **macOS Activity Monitor Waveform (`charts.js`):** Monotone cubic spline curve with soft linear gradient area decay, breathing terminal pulse dot, and frosted glass crosshair tooltip.
+* **Console.app Flow Inspector (`index.html`, `styles.css`):** Tabbed OpenFlow 1.3 rule inspector with segmented controls, subtle zebra striping, and Dynamic Island flow rule diff chips.
+* **iOS Dynamic Island Notifications (`toast.js`):** Floating top-center pill notifications with bouncy spring physics, glowing progress hairlines, and specular smoked glass.
+
+---
+*Note: All phases through Phase 7 (Apple UI Elevation) have been fully implemented, verified with 16/16 passing unit tests, and documented.*

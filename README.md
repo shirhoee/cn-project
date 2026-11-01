@@ -111,19 +111,21 @@ Open your browser (Chrome, Edge, or Firefox on Windows or Linux) and navigate to
 > **Accessing from Windows Host under WSL2:**
 > In most Windows 10/11 environments, WSL2 automatically forwards `localhost:8080` to Windows. If your browser cannot reach `localhost:8080` due to Windows firewall rules, retrieve your WSL2 IP address by running `hostname -I` in your terminal (e.g. `172.x.x.x`) and navigate to `http://<WSL_IP>:8080/`.
 
-The dashboard provides a real-time, zero-dependency visual interface engineered specifically for academic demonstration:
-* **Interactive 60 FPS Topology Visualizer:** Displays switches, servers, clients, and animated packet flows scaled crisply at any DPI.
+The dashboard provides an **Apple-grade, presentation-ready telemetry console** engineered with macOS Sequoia / iOS 18 Human Interface Guidelines (HIG) and apple.com presentation aesthetics:
+* **Interactive 60 FPS Topology Visualizer:** Displays milled metal squircle switches, glowing status pearls, servers, clients, and animated photonic comet packet streams scaled crisply at any device pixel ratio (DPR).
 * **Click-to-Trace Forwarding Path:** Click any client (e.g., `client1`) and then a server (e.g., `server1` or `server2`) to highlight the active hop-by-hop OpenFlow routing corridor.
-* **Live Link State Transitions:** Watch primary links sever and pulse red while the redundant standby link illuminates in electric blue upon failover.
-* **Dynamic Hardware NAT Visualizer:** Watch client requests to `10.0.0.11` turn amber and divert to `10.0.0.12` when Server 1 reports overload.
+* **Live Link State Transitions:** Watch primary links sever and pulse in Apple Red (`#ff453a`) while the redundant backup corridor illuminates in radiant Apple Cyan (`#64d2ff`) with a traveling photon pulse upon failover.
+* **Dynamic Hardware NAT Visualizer:** Watch client requests to `10.0.0.11` turn Apple Orange (`#ff9f0a`) and divert to replica server `server2` when Server 1 reports overload.
 * **Real-Time Performance Metrics:**
-  * **RTT Latency:** Live download latency with rolling median calculation.
-  * **Peak Throughput:** Instantaneous transfer rate in kbps.
+  * **RTT Latency:** Live download latency with rolling median calculation and outlier-resistant scaling.
+  * **Peak Throughput:** Instantaneous transfer rate in kbps with tabular figures.
   * **Failover Speed Stopwatch:** Hardware OpenFlow flow modification duration measured in sub-milliseconds (`< 2.5 ms`).
-  * **Active Connection Radial Gauge:** Color-coded meter tracking concurrent server load against the threshold limit.
-* **Static Baseline vs. Dynamic SDN Grouped Bar Chart:** Real-time visual comparison of Latency, Throughput, and Success Rate (100% vs 33%) pulled directly from `performance_metrics.csv`.
-* **Hardware Flow Table Inspector:** Real-time tabbed view of active OpenFlow 1.3 rules across Core (`s1`), Server (`s2`), and Client (`s3`) switches with dynamic rule change diff chips (`+2 rules`).
+  * **Apple Watch Activity Ring Gauge:** Dual concentric circular rings rendering active Server 1 connection load and Corridor Capacity with rounded caps and terminal drop shadows.
+* **macOS Activity Monitor Health Waveform:** Monotone cubic spline curve with soft linear gradient area decay, breathing terminal pulse dot, and frosted glass crosshair tooltip.
+* **Apple Keynote Benchmark Visualizer:** Grouped capsule bars comparing Latency, Throughput, and Availability (100% vs 33.3%) with bold emerald multiplier callout badges (**"2,780× Faster"**, **"3× Uptime"**).
+* **Hardware Flow Table Inspector (Console.app Style):** Segmented pill switcher with smooth chiclets, subtle zebra striping, and Dynamic Island flow rule diff chips (`+2 rules`).
 * **Live Event Stream Console:** Timestamped feed of controller events with category filter chips (`All`, `Link`, `Failover`, `Overload`, `NAT`) and one-click JSON export.
+* **iOS Dynamic Island Notifications:** Floating top-center pill notifications with bouncy spring physics, glowing progress hairlines, and specular smoked glass.
 * **One-Click Simulation Triggers & Presenter Mode:** Demo buttons and keyboard accelerators to trigger failover, overload, or presenter mode instantly.
 
 #### Keyboard Shortcuts
@@ -286,7 +288,8 @@ cn_project/
 ├── plans/                         # Implementation feature plans
 │   ├── phase-5-docs-cleanup-and-verification.md
 │   ├── phase-6-live-telemetry-dashboard.md
-│   └── phase-7-dashboard-polish.md
+│   ├── phase-7-dashboard-polish.md
+│   └── apple-ui-redesign-spec.md
 ├── src/
 │   ├── app/
 │   │   ├── client.py              # TCP socket client with latency tracking
