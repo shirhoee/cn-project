@@ -289,6 +289,8 @@ cn_project/
 │   ├── phase-5-docs-cleanup-and-verification.md
 │   ├── phase-6-live-telemetry-dashboard.md
 │   ├── phase-7-dashboard-polish.md
+│   ├── phase-8-dashboard-recovery-and-visual-fix.md
+│   ├── phase-10-interactive-comparison-and-ui-elevation.md
 │   └── apple-ui-redesign-spec.md
 ├── src/
 │   ├── app/
@@ -306,6 +308,7 @@ cn_project/
 │   │       ├── app.js             # Dashboard controller & keyboard shortcuts
 │   │       ├── charts.js          # Canvas time-series latency/throughput graph
 │   │       ├── comparison.js      # Static vs Dynamic grouped bar comparison chart
+│   │       ├── deep_dive.js       # Interactive split comparison slider & scenario simulator
 │   │       ├── gauge.js           # Radial arc meter for server connections
 │   │       ├── toast.js           # Slide-down toast alert notification banner
 │   │       └── topology_canvas.js # 60 FPS HTML5 Canvas animated packet flow & trace
@@ -318,5 +321,6 @@ cn_project/
     ├── evaluate_performance.py    # Automated comparative test harness
     ├── evaluate_performance.sh    # Evaluation guide wrapper
     ├── test_dashboard_api.py      # Integration test for dashboard endpoints
-    └── test_sanity.py             # Repository & topology sanity assertions
+    ├── test_sanity.py             # Repository & topology sanity assertions
+    └── validate_frontend_syntax.py # Frontend JavaScript AST & balance validation
 ```

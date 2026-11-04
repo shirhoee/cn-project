@@ -48,7 +48,7 @@ Shaun is responsible for the Mininet data plane infrastructure and the metrics i
 
 ---
 
-## 3. Live Telemetry & Presentation Console (Phase 6 & 7: Apple UI Elevation)
+## 3. Live Telemetry & Presentation Console (Phases 6 – 10: Apple UI Elevation, Split Deep-Dive & Member Spotlight)
 
 To elevate the project into a presentation-grade academic demonstration for viva defense and final evaluation, the team designed and implemented an autonomous real-time telemetry console:
 
@@ -61,5 +61,12 @@ To elevate the project into a presentation-grade academic demonstration for viva
 * **Console.app Flow Inspector (`index.html`, `styles.css`):** Tabbed OpenFlow 1.3 rule inspector with segmented controls, subtle zebra striping, and Dynamic Island flow rule diff chips.
 * **iOS Dynamic Island Notifications (`toast.js`):** Floating top-center pill notifications with bouncy spring physics, glowing progress hairlines, and specular smoked glass.
 
+### Phase 10: Interactive Static vs Dynamic Deep-Dive & Member Spotlight
+* **Top-Level Navigation View Switcher:** Toggles between "Live Network Operations" and "Static vs Dynamic Deep-Dive".
+* **Interactive Drag Split Slider (`deep_dive.js`):** Allows examiners to drag a split divider revealing side-by-side animated packet flows (Static packet drops & timeouts vs Dynamic <2.5ms failover).
+* **Team 17 Spotlight Glow:** Hovering over each member's chip highlights their architectural domain on the topology canvas (Shashidhar: socket hosts; Shreyansh: OpenFlow controller & Core switch; Shaun: topology conduits & benchmarks).
+* **Right-Column Decongestion (Segmented Deck Switcher):** Replaces crowded vertical stack with a master switcher (`Metrics & Health`, `OpenFlow Rules`, `Live Event Stream`).
+* **Visual Bug Fixes:** Adaptive unit formatting for throughput (Mbps/kbps with `clamp()`), integer-snapped crisp Y-axis canvas text with 85% opacity, and dead bottom-left space utilization with a Viva Quick Guide card.
+
 ---
-*Note: All phases through Phase 7 (Apple UI Elevation) have been fully implemented, verified with 16/16 passing unit tests, and documented.*
+*Note: All phases through Phase 10 have been fully implemented, verified with 16/16 passing unit tests, all 7 JS modules passing syntax checks, and documented.*

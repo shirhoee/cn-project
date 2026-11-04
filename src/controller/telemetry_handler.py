@@ -427,11 +427,12 @@ class DashboardHttpHandler(http.server.BaseHTTPRequestHandler):
 
                 while True:
                     try:
-                        msg = q.get(timeout=15.0)
+                        msg = q.get(timeout=1.5)
                         self.wfile.write(msg.encode('utf-8'))
                         self.wfile.flush()
                     except queue.Empty:
-                        self.wfile.write(b": keepalive\n\n")
+                        # Named SSE event keeps connection alive and refreshes client watchdog without false disconnects
+                        self.wfile.write(b"event: ping\ndata: {}\n\n")
                         self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError, Exception):
                 pass
@@ -475,10 +476,7 @@ class DashboardHttpHandler(http.server.BaseHTTPRequestHandler):
                     self._custom_cache_headers = True
                     self.send_response(304)
                     self.send_header('ETag', f'"{etag}"')
-                    if '?' in self.path and 'v=' in self.path:
-                        self.send_header('Cache-Control', 'public, max-age=31536000, immutable')
-                    else:
-                        self.send_header('Cache-Control', 'public, max-age=3600, must-revalidate')
+                    self.send_header('Cache-Control', 'no-cache, must-revalidate')
                     self.end_headers()
                     return
 
@@ -487,12 +485,7 @@ class DashboardHttpHandler(http.server.BaseHTTPRequestHandler):
                 self.send_header('Content-Type', mime_type)
                 self.send_header('Content-Length', str(len(content)))
                 self.send_header('ETag', f'"{etag}"')
-                if file_path.endswith('.html'):
-                    self.send_header('Cache-Control', 'no-cache, must-revalidate')
-                elif '?' in self.path and 'v=' in self.path:
-                    self.send_header('Cache-Control', 'public, max-age=31536000, immutable')
-                else:
-                    self.send_header('Cache-Control', 'public, max-age=3600, must-revalidate')
+                self.send_header('Cache-Control', 'no-cache, must-revalidate')
                 self.end_headers()
                 self.wfile.write(content)
                 return

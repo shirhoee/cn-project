@@ -202,3 +202,31 @@ cn_project/
   * **Click-to-Trace Forwarding Verification:** Interactive canvas tool allowing users to click a client then a server to highlight the active hop-by-hop forwarding path.
   * **One-Click Simulation Triggers & Presenter Mode:** Built-in DEMO buttons and keyboard accelerators (`1`, `2`, `R`, `P`, `S`, `?`) for smooth viva presentation.
 
+* **Phase 8: Dashboard Recovery, Parser Invariant & Visual Responsiveness Fix (Deliverable D2 - Completed)**
+  * **Syntax & Parser Recovery:** Fix premature closing brace on line 336 of `src/dashboard/js/app.js` restoring full instantiation of `DashboardApp`.
+  * **Local Dev Cache Invariant (1A):** Remove aggressive `immutable` / 1-year caching in `src/controller/telemetry_handler.py`. Enforce `Cache-Control: no-cache, must-revalidate` with dynamic ETags. Bump script/style query version from `?v=2.0.0` to `?v=2.1.0`.
+  * **In-App Error Banner (2A):** Implement `#appErrorBanner` in `index.html`, `styles.css`, and `app.js` to visibly surface unhandled script errors in a floating Apple-styled pill.
+  * **Static Topology Instant Paint (3A):** Force immediate static layer render on `TopologyCanvas` instantiation so switches, links, port badges, and hosts are visible before the first telemetry frame.
+  * **Automated Syntax Validation Test:** Implement `tests/validate_frontend_syntax.py` ensuring all JS files have balanced blocks/parens/brackets.
+
+* **Phase 9: SSE Keepalive Heartbeat & Full Apple HIG Aesthetic Transformation (Deliverable D2 - Completed)**
+  * **SSE Keepalive Disconnection Root-Cause Resolution:** Diagnosed why `#offlineOverlay` ("Controller Disconnected") fired periodically. SSE comments (`: keepalive\n\n`) are discarded by browser `EventSource` parsers and do not trigger DOM events. When traffic was idle, the 3.8s frontend watchdog starved. Resolved by sending active `event: ping\ndata: {}\n\n` every 1.5s in `telemetry_handler.py`, listening for `ping` in `app.js`, extending watchdog to 5.0s, and adding proactive `/api/telemetry` probe before alarming.
+  * **Custom Apple Dark Capsule Scrollbars:** Injected custom `::-webkit-scrollbar` and `scrollbar-width: thin` across the entire document and `.table-container`, eradicating the 17px bright white Windows Chrome default scrollbar.
+  * **Ambient Stage Lighting & Frosted Glass Refraction:** Added multi-hue radial stage lighting in `body::before` (soft indigo, cyan, emerald fields) so `backdrop-filter: blur(20px)` refracts authentic glass vibrancy rather than flat pitch black.
+  * **Specular Chamfers & Card Elevation:** Upgraded `--apple-shadow-card` with physical top chamfer specular highlights (`inset 0 1px 0 0 rgba(255, 255, 255, 0.22)`).
+  * **High-Contrast Apple Typography:** Enforced `"Segoe UI Variable Display"`, `system-ui`, and `600` weight on `.metric-value strong` for crisp, punchy optical clarity under Windows ClearType.
+  * **Elevated Segmented Pill Slider:** Transformed `switchTabs` with authentic macOS glass chiclet slider (`rgba(255, 255, 255, 0.18)` + specular inner border).
+  * **Outlier-Resistant Latency Spline:** Clamped handshake/timeout spikes in `charts.js` so isolated 2600ms timeouts no longer flatten live ~1ms waves against the baseline.
+  * **Activity Ring Readout Dimensions:** Expanded connection gauge to 104x60px for effortless readability.
+  * **Cache Invalidation:** Bumped all asset queries to `?v=2.2.0` in `index.html`.
+
+* **Phase 10: Interactive Static vs. Dynamic Deep-Dive, Member Spotlight & Layout Elevation (Deliverable D2 - Completed & Verified)**
+  * **Prominent Glass Team Dossier & Problem Statement Banner:** Positioned below the titlebar with member avatar chips for Shashidhar, Shreyansh Raj, and Shaun Joe Soares.
+  * **Member Hover Tooltip & Canvas Spotlight Glow:** Interactive popovers explaining individual code contributions with pulsating neon canvas spotlighting (dimming unrelated nodes, highlighting member components).
+  * **Top-Level Navigation View Switcher:** Seamlessly toggles between "Live Network Operations" and "Static vs Dynamic Deep-Dive".
+  * **Interactive Before/After Comparison Slider with Animations:** Drag slider revealing side-by-side animated packet flows (Static packet loss & timeouts vs Dynamic sub-2.5ms failover).
+  * **Right-Column Decongestion (Segmented Deck Switcher):** Tabbed master switcher ('Metrics & Health', 'OpenFlow Rules', 'Event Stream') eliminating vertical squishing.
+  * **Visual Bug Fixes:** Adaptive unit formatting for throughput (Mbps/kbps with `clamp()`), integer-snapped crisp Y-axis canvas text with 85% opacity, and complete utilization of the bottom-left space with an interactive viva quick-reference card.
+  * **Comprehensive Verification:** 16/16 unit tests passing, all 7 frontend JavaScript modules passing AST syntax checks, zero runtime console errors.
+
+

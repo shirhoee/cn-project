@@ -121,6 +121,8 @@ class MetricsChart {
 
     this.canvas.width = Math.round(w * dpr);
     this.canvas.height = Math.round(h * dpr);
+    this.canvas.style.width = w + 'px';
+    this.canvas.style.height = h + 'px';
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.render();
   }
@@ -218,47 +220,45 @@ class MetricsChart {
     const chartW = w - padLeft - padRight;
     const chartH = h - padTop - padBottom;
 
-    // Outlier-resistant rolling Y-axis max (p95 / 3.5x median cap)
+    // Outlier-resistant rolling Y-axis max:
+    // Prevents an isolated handshake/timeout spike (e.g. 2605ms) from flattening healthy ~1ms waves
     const validLats = this.dataPoints.map(d => d.latency).filter(v => v > 0);
     let maxLat = 2.0;
     if (validLats.length > 0) {
       const sorted = [...validLats].sort((a, b) => a - b);
       const mid = Math.floor(sorted.length / 2);
       const median = sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-      const p95Idx = Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95));
-      const p95 = sorted[p95Idx];
 
-      // Cap to prevent a single timeout outlier (e.g. 2003ms) from flattening healthy waves
-      const cap = Math.max(median * 3.5, p95, 1.5);
-      const nonOutliers = sorted.filter(v => v <= cap);
-      const peak = nonOutliers.length > 0 ? nonOutliers[nonOutliers.length - 1] : cap;
+      // Filter out isolated timeout/handshake outliers (> 4.5x median and > 8ms)
+      const normalPoints = sorted.filter(v => v <= Math.max(median * 4.5, 8.0));
+      const peak = normalPoints.length > 0 ? normalPoints[normalPoints.length - 1] : Math.max(median * 2.5, 2.0);
 
-      maxLat = Math.max(1.5, Math.ceil(peak * 1.3 * 2) / 2);
+      maxLat = Math.max(2.0, Math.ceil(peak * 1.35 * 2) / 2);
       if (maxLat > 10) maxLat = Math.ceil(maxLat / 5) * 5;
     }
 
-    // 1. Apple Hairline Grid & Tabular Ticks
+    // 1. Apple Hairline Grid & Tabular Ticks (Crisp integer snapping & high contrast)
     ctx.save();
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
     ctx.lineWidth = 1;
 
     const numTicks = 3;
     for (let i = 0; i <= numTicks; i++) {
-      const y = padTop + (chartH / numTicks) * i;
+      const y = Math.round(padTop + (chartH / numTicks) * i);
       ctx.beginPath();
-      ctx.moveTo(padLeft, y);
-      ctx.lineTo(w - padRight, y);
+      ctx.moveTo(padLeft, y + 0.5);
+      ctx.lineTo(w - padRight, y + 0.5);
       ctx.stroke();
 
-      // Rounded tick label
-      ctx.fillStyle = 'rgba(235, 235, 245, 0.4)';
-      ctx.font = '600 9px "SF Mono", ui-monospace, monospace';
+      // Rounded tick label (Crisp, high-contrast typography)
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.font = '500 11px -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "SF Pro Text", sans-serif';
       ctx.fontVariantNumeric = 'tabular-nums slashed-zero';
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';
       const tickVal = maxLat * (1 - i / numTicks);
       const formatted = tickVal >= 10 ? tickVal.toFixed(0) : tickVal.toFixed(1);
-      ctx.fillText(`${formatted} ms`, padLeft - 6, y);
+      ctx.fillText(`${formatted} ms`, padLeft - 8, y);
     }
     ctx.restore();
 

@@ -26,3 +26,6 @@ description: Apply these guidelines whenever working on the backend, API routes,
 * **Explicit Switch Port Binding:** Always assign explicit port numbers (`port1` and `port2`) in `addLink(...)` calls for Mininet topologies. Never rely on implicit sequential port numbering when controllers enforce static or priority-based OpenFlow port routing.
 * **Broadcast Storm & Loop Guards:** On topologies containing redundant links or cycles, enforce `net.staticArp()` on startup to prevent broadcast storms. Ensure controllers explicitly isolate backup links from standard flood domains until failover is triggered.
 * **SDN Controller Frameworks:** When developing with `os-ken`, inherit from `app_manager.OSKenApp` (not `RyuApp`). For Northbound REST APIs, prefer Python standard library HTTP servers (`http.server.ThreadingHTTPServer`) over legacy framework WSGI layers.
+
+### 5. Local Development Cache Invariant
+* **No Immutable Assets in Dev:** Never serve local dashboard frontend assets with `immutable` or long `max-age` caching headers. Always enforce `Cache-Control: no-cache, must-revalidate` alongside strong ETags so browser refreshes immediately load updated source files without manual cache-clearing workarounds.

@@ -44,7 +44,8 @@ class TopologyCanvas {
       server1Overload: false,
       servers: {},
       hoveredNode: null,
-      flowTotals: {}
+      flowTotals: {},
+      memberSpotlight: null // 'shashidhar', 'shreyansh', 'shaun'
     };
 
     // Animation & transition states
@@ -80,6 +81,12 @@ class TopologyCanvas {
     this.resizeObserver.observe(this.container);
 
     this.bindEvents();
+
+    // Instant Baseline Paint (Choice 3A): Ensure static topology renders immediately on construction
+    this.updateNodePositions();
+    this.cacheGradients();
+    this.renderStatic();
+    this.render();
     // One shared rAF loop in app.js: do not self-start rAF here
   }
 
@@ -525,6 +532,13 @@ class TopologyCanvas {
     const s3 = this.nodes.s3;
     if (!s1 || !s2 || !s3) return;
 
+    ctx.save();
+    if (this.state.memberSpotlight === 'shashidhar') {
+      ctx.globalAlpha = 0.2;
+    } else if (this.state.memberSpotlight === 'shreyansh') {
+      ctx.globalAlpha = 0.85;
+    }
+
     // Link s1-s2 (Primary Corridor)
     if (!this.state.failoverActive && !this.state.linkS1S2Down) {
       this.drawConduit(ctx, s1, s2, '#0a84ff', 2.8);
@@ -562,6 +576,7 @@ class TopologyCanvas {
 
     this.drawLinkLine(ctx, s3, this.nodes.client3, 'rgba(235, 235, 245, 0.25)', 2);
     this.drawPortBadgeAlong(ctx, s3, this.nodes.client3, 0.42, 's3:4');
+    ctx.restore();
   }
 
   drawConduit(ctx, from, to, color, width) {
@@ -701,14 +716,74 @@ class TopologyCanvas {
     ctx.restore();
   }
 
+  isNodeInMemberSpotlight(key, n) {
+    const sp = this.state.memberSpotlight;
+    if (!sp) return true;
+    if (sp === 'shashidhar') {
+      return n.type === 'server' || n.type === 'client';
+    }
+    if (sp === 'shreyansh') {
+      return n.id === 's1';
+    }
+    if (sp === 'shaun') {
+      return n.type === 'switch';
+    }
+    return true;
+  }
+
+  setMemberSpotlight(name) {
+    this.state.memberSpotlight = name ? name.toLowerCase() : null;
+    this.render();
+  }
+
+  clearMemberSpotlight() {
+    this.state.memberSpotlight = null;
+    this.render();
+  }
+
   drawNodes(ctx) {
+    const isSpotlightActive = !!this.state.memberSpotlight;
+
     for (const key in this.nodes) {
       const n = this.nodes[key];
       const isHovered = this.state.hoveredNode === n;
+      const isSpotlighted = this.isNodeInMemberSpotlight(key, n);
 
       ctx.save();
-      if (this.state.hoveredNode && !isHovered) {
+      if (isSpotlightActive) {
+        ctx.globalAlpha = isSpotlighted ? 1.0 : 0.20;
+      } else if (this.state.hoveredNode && !isHovered) {
         ctx.globalAlpha = 0.55;
+      }
+
+      // Draw pulsating spotlight halo around highlighted nodes
+      if (isSpotlightActive && isSpotlighted) {
+        const pulse = 1 + Math.sin(Date.now() / 180) * 0.15;
+        const haloColor = this.state.memberSpotlight === 'shashidhar' ? '#30d158' : (this.state.memberSpotlight === 'shreyansh' ? '#0a84ff' : '#64d2ff');
+        ctx.strokeStyle = haloColor;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, (n.radius + 7) * pulse, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Architectural ownership badge
+        let badgeTxt = '';
+        if (this.state.memberSpotlight === 'shashidhar') badgeTxt = 'Socket TCP: 9000';
+        else if (this.state.memberSpotlight === 'shreyansh') badgeTxt = 'OF1.3 Core & REST';
+        else if (this.state.memberSpotlight === 'shaun') badgeTxt = n.id === 's1' ? 'Core OVS' : (n.id === 's2' ? 'Server OVS' : 'Client OVS');
+
+        if (badgeTxt) {
+          ctx.font = '700 8.5px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif';
+          const bw = ctx.measureText(badgeTxt).width + 8;
+          ctx.fillStyle = 'rgba(20, 20, 25, 0.95)';
+          ctx.strokeStyle = haloColor;
+          ctx.lineWidth = 1;
+          this.roundRect(ctx, n.x - bw / 2, n.y - n.radius - 18, bw, 14, 4, true, true);
+          ctx.fillStyle = haloColor;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(badgeTxt, n.x, n.y - n.radius - 11);
+        }
       }
 
       if (n.type === 'switch') {

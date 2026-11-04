@@ -30,3 +30,6 @@ description: Invariant rules for Vanilla HTML5, CSS Grid, and Canvas 2D telemetr
 
 ### 5. Backend Asset Route Synchronization
 - Whenever adding or refactoring a frontend asset (`<script src="...">` or `<link href="...">`), verify that the backend server's static file handler / whitelist explicitly serves that exact path and Content-Type before testing.
+
+### 6. Zero-Dependency Script Syntax & Balance Validation
+- In environments without Node.js linters, before completing any frontend task, you MUST run an automated bracket, parentheses, and syntax balance validator (`python3 tests/validate_frontend_syntax.py`) across all modified `.js` files to eliminate fatal top-level `SyntaxError` regressions.

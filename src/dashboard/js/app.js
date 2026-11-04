@@ -74,8 +74,20 @@ class DashboardApp {
       if (db) db.classList.remove('hidden');
     }
 
+    const closeBtn = document.getElementById('btnCloseErrorBanner');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => {
+        document.getElementById('appErrorBanner')?.classList.add('hidden');
+      });
+    }
+
     window.addEventListener('error', (e) => {
-      this.recordError(e.message || 'Script error');
+      const detail = e.filename ? `${e.message} (${e.filename.split('/').pop()}:${e.lineno})` : (e.message || 'Script error');
+      this.recordError(detail);
+    });
+
+    window.addEventListener('unhandledrejection', (e) => {
+      this.recordError(`Unhandled Promise: ${e.reason?.message || e.reason}`);
     });
   }
 
@@ -85,6 +97,14 @@ class DashboardApp {
     if (errEl) {
       errEl.textContent = msg;
       errEl.className = 'debug-val state-err';
+    }
+
+    // In-app floating error banner (Choice 2A)
+    const banner = document.getElementById('appErrorBanner');
+    const msgEl = document.getElementById('appErrorMessage');
+    if (banner && msgEl) {
+      msgEl.textContent = msg;
+      banner.classList.remove('hidden');
     }
   }
 
@@ -182,9 +202,21 @@ class DashboardApp {
   }
 
   initWatchdog() {
-    setInterval(() => {
+    setInterval(async () => {
       const elapsed = Date.now() - this.lastDataTimestamp;
-      if (elapsed > 3800) {
+      if (elapsed > 4500) {
+        // Proactively probe controller before alarming to prevent false disconnects
+        try {
+          const res = await fetch('/api/telemetry');
+          if (res.ok) {
+            const data = await res.json();
+            this.markDataReceived();
+            this.updateHeaderStatus(data);
+            return;
+          }
+        } catch (e) {
+          // Genuinely disconnected
+        }
         this.showOfflineOverlay(true);
         this.markControllerOffline();
       } else {
@@ -250,6 +282,10 @@ class DashboardApp {
         this.sseActive = true;
         this.stopFallbackPolling();
         this.updateDebugSse('STREAMING (LIVE)', 'state-ok');
+      });
+
+      this.eventSource.addEventListener('ping', () => {
+        this.markDataReceived();
       });
 
       this.eventSource.addEventListener('telemetry', (e) => {
@@ -333,10 +369,132 @@ class DashboardApp {
     }
     this.startFallbackPolling();
   }
-  }
 
   bindDomEvents() {
-    // Switch tabs
+    // 1. Top-Level View Switcher (Live Operations vs Deep-Dive)
+    const viewButtons = document.querySelectorAll('#mainViewSwitch .view-tab-btn');
+    const liveView = document.getElementById('liveView');
+    const deepDiveView = document.getElementById('deepDiveView');
+
+    viewButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        viewButtons.forEach(b => {
+          b.classList.remove('active');
+          b.setAttribute('aria-selected', 'false');
+        });
+        btn.classList.add('active');
+        btn.setAttribute('aria-selected', 'true');
+        const view = btn.dataset.view;
+
+        if (view === 'deepdive') {
+          liveView?.classList.add('hidden');
+          liveView?.classList.remove('active');
+          deepDiveView?.classList.remove('hidden');
+          deepDiveView?.classList.add('active');
+          if (window.deepDiveController) {
+            window.deepDiveController.resizeCanvases();
+          }
+        } else {
+          deepDiveView?.classList.add('hidden');
+          deepDiveView?.classList.remove('active');
+          liveView?.classList.remove('hidden');
+          liveView?.classList.add('active');
+          if (this.topoCanvas) this.topoCanvas.resize();
+          if (this.metricsChart) this.metricsChart.resize();
+          if (this.comparisonChart) this.comparisonChart.resize();
+        }
+      });
+    });
+
+    // 2. Member Avatar Hover & Canvas Spotlight Glow
+    const memberChips = document.querySelectorAll('.member-chip');
+    memberChips.forEach(chip => {
+      const member = chip.dataset.member;
+      chip.addEventListener('mouseenter', () => {
+        if (this.topoCanvas && this.topoCanvas.setMemberSpotlight) {
+          this.topoCanvas.setMemberSpotlight(member);
+        }
+      });
+      chip.addEventListener('mouseleave', () => {
+        if (this.topoCanvas && this.topoCanvas.clearMemberSpotlight) {
+          this.topoCanvas.clearMemberSpotlight();
+        }
+      });
+      chip.addEventListener('focus', () => {
+        if (this.topoCanvas && this.topoCanvas.setMemberSpotlight) {
+          this.topoCanvas.setMemberSpotlight(member);
+        }
+      });
+      chip.addEventListener('blur', () => {
+        if (this.topoCanvas && this.topoCanvas.clearMemberSpotlight) {
+          this.topoCanvas.clearMemberSpotlight();
+        }
+      });
+    });
+
+    // 3. Problem Statement Dossier Accordion
+    const btnToggleProblem = document.getElementById('btnToggleProblemStatement');
+    const problemDossier = document.getElementById('problemStatementDossier');
+    if (btnToggleProblem && problemDossier) {
+      btnToggleProblem.addEventListener('click', () => {
+        problemDossier.classList.toggle('hidden');
+        btnToggleProblem.classList.toggle('active');
+      });
+    }
+
+    // 4. Viva Quick Guide Tabs
+    const guideTabs = document.querySelectorAll('.guide-tab-btn');
+    const guidePanes = document.querySelectorAll('.guide-pane');
+    guideTabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        guideTabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        const targetTab = tab.dataset.tab;
+        guidePanes.forEach(pane => {
+          if (pane.id === `pane${targetTab.charAt(0).toUpperCase() + targetTab.slice(1)}`) {
+            pane.classList.remove('hidden');
+            pane.classList.add('active');
+          } else {
+            pane.classList.add('hidden');
+            pane.classList.remove('active');
+          }
+        });
+      });
+    });
+
+    // 5. Diagnostics Deck Switcher (Eliminates vertical squishing)
+    const deckButtons = document.querySelectorAll('#diagnosticsDeckSwitch .deck-tab-btn');
+    const deckPanes = document.querySelectorAll('.diagnostics-column .deck-pane');
+    deckButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        deckButtons.forEach(b => {
+          b.classList.remove('active');
+          b.setAttribute('aria-selected', 'false');
+        });
+        btn.classList.add('active');
+        btn.setAttribute('aria-selected', 'true');
+        const deck = btn.dataset.deck;
+
+        deckPanes.forEach(pane => {
+          if (pane.id === `deckPane${deck.charAt(0).toUpperCase() + deck.slice(1)}`) {
+            pane.classList.remove('hidden');
+            pane.classList.add('active');
+          } else {
+            pane.classList.add('hidden');
+            pane.classList.remove('active');
+          }
+        });
+
+        if (deck === 'metrics') {
+          if (this.metricsChart) this.metricsChart.resize();
+          if (this.comparisonChart) this.comparisonChart.resize();
+        } else if (deck === 'flows') {
+          this.renderFlowTable();
+        }
+      });
+    });
+
+    // Switch tabs inside Flow Table
     const tabs = document.querySelectorAll('.tab-btn');
     tabs.forEach(btn => {
       btn.addEventListener('click', () => {
@@ -603,7 +761,6 @@ class DashboardApp {
       const activeRect = activeTab.getBoundingClientRect();
       const leftOffset = activeRect.left - containerRect.left;
       pill.style.width = `${activeRect.width}px`;
-      pill.style.height = `${activeRect.height}px`;
       pill.style.transform = `translateX(${leftOffset}px)`;
       pill.style.opacity = '1';
     } else {
@@ -998,9 +1155,15 @@ class DashboardApp {
       this.prevLatency = curLat;
     }
 
-    // Tween throughput
+    // Tween throughput with adaptive unit formatting (Mbps >= 10,000 kbps to prevent card border collisions)
     if (tputEl && Math.abs(curTput - this.prevThroughput) > 10) {
-      this.tweenNumber(tputEl, this.prevThroughput, curTput, 400, v => Math.round(v).toLocaleString());
+      const isMbps = curTput >= 10000;
+      const unitEl = tputEl.parentElement?.querySelector('small');
+      if (unitEl) unitEl.textContent = isMbps ? 'Mbps' : 'kbps';
+
+      this.tweenNumber(tputEl, this.prevThroughput, curTput, 400, v => {
+        return v >= 10000 ? (v / 1000).toFixed(2) : Math.round(v).toLocaleString();
+      });
       this.prevThroughput = curTput;
     }
 
@@ -1015,7 +1178,11 @@ class DashboardApp {
     const validTput = metricsList.map(m => m.throughput_kbps);
     if (validTput.length > 0 && tputPeakEl) {
       const peak = Math.max(...validTput);
-      tputPeakEl.textContent = `Peak: ${Math.round(peak).toLocaleString()} kbps`;
+      if (peak >= 10000) {
+        tputPeakEl.textContent = `Peak: ${(peak / 1000).toFixed(2)} Mbps`;
+      } else {
+        tputPeakEl.textContent = `Peak: ${Math.round(peak).toLocaleString()} kbps`;
+      }
     }
   }
 
